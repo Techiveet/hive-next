@@ -1,20 +1,10 @@
+// app/(dashboard)/page.tsx
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { DashboardShell } from "@/components/dashboard-shell";
-import { getCurrentSession } from "@/lib/auth-server";
-import { redirect } from "next/navigation";
-
-export default async function HomePage() {
-  const { user } = await getCurrentSession();
-
-  if (!user) {
-    redirect("/sign-in?callbackURL=/");
-  }
-
+export default function DashboardPage() {
   return (
-    <DashboardShell
-      user={{ name: user.name ?? null, email: user.email }}
-    >
+    <>
       {/* Top stats row */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border border-border bg-card text-foreground shadow-sm dark:bg-slate-900 dark:border-slate-800 dark:text-slate-50">
@@ -96,6 +86,6 @@ export default async function HomePage() {
           </CardContent>
         </Card>
       </div>
-    </DashboardShell>
+    </>
   );
 }

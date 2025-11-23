@@ -1,0 +1,168 @@
+// prisma/schema.prisma
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id            String        @id
+  name          String        @db.Text
+  email         String
+  emailVerified Boolean       @default(false)
+  image         String?       @db.Text
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  // multi-tenant & rbac relations
+  tenantMemberships UserTenant[]
+  userRoles         UserRole[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?  @db.Text
+  userAgent String?  @db.Text
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([userId(length: 191)])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String    @db.Text
+  providerId            String    @db.Text
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?   @db.Text
+  password              String?   @db.Text
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId(length: 191)])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String   @db.Text
+  value      String   @db.Text
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier(length: 191)])
+  @@map("verification")
+}
+
+// =====================
+//  MULTI-TENANT + RBAC
+// =====================
+
+enum RoleScope {
+  CENTRAL   // central platform roles
+  TENANT    // tenant-scoped roles
+}
+
+model Tenant {
+  id        String        @id @default(cuid())
+  name      String
+  slug      String        @unique
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  users     UserTenant[]
+  userRoles UserRole[]
+  domains   TenantDomain[]
+}
+
+// separate table for domains
+model TenantDomain {
+  id        String   @id @default(cuid())
+  tenantId  String   @unique     // one domain record per tenant
+  domain    String   @unique     // each domain unique globally
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+model Role {
+  id        Int              @id @default(autoincrement())
+  key       String           @unique          // e.g. "central_superadmin"
+  name      String                            // e.g. "Central Super Administrator"
+  scope     RoleScope
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  userRoles    UserRole[]
+  permissions  RolePermission[]
+}
+
+model Permission {
+  id        Int              @id @default(autoincrement())
+  key       String           @unique          // e.g. "manage_tenants"
+  name      String                            // human readable
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  roles     RolePermission[]
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+
+  role        Role        @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission  Permission  @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+// user <-> tenant membership
+model UserTenant {
+  id         String   @id @default(cuid())
+  userId     String
+  tenantId   String
+  isOwner    Boolean  @default(false)
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+}
+
+// user role assignment (central or tenant-scoped)
+model UserRole {
+  id       String  @id @default(cuid())
+  userId   String
+  roleId   Int
+  tenantId String?      // null = central role
+
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
+
+  @@unique([userId, roleId, tenantId])
+}
