@@ -220,6 +220,8 @@ model File {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  isFavorite Boolean   @default(false)
+  deletedAt  DateTime? // null = active, not null = in recycle bin
 
   @@index([tenantId])
 }

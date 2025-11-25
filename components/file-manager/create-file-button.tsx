@@ -22,11 +22,11 @@ export function CreateFileButton({
       <Button
         type="button"
         size="sm"
-        className="inline-flex items-center gap-1.5 rounded-full border bg-background px-3 py-1.5 text-[11px] font-medium shadow-sm transition hover:-translate-y-0.5 hover:bg-accent"
+      className="inline-flex items-center gap-1.5 rounded-full bg-primary px-3 py-1.5 text-[11px] font-medium text-primary-foreground shadow-sm transition hover:-translate-y-0.5 hover:bg-primary/90"
         onClick={() => setOpen(true)}
       >
         <UploadCloud className="h-3 w-3" />
-        Upload File
+        Create/Upload File
       </Button>
 
       <UploadFileDialog

@@ -6,10 +6,7 @@ import {
   FileText,
   FolderOpen,
   Image as ImageIcon,
-  MoreHorizontal,
   Music,
-  Package2,
-  Search,
   Settings2,
   Share2,
   Star,
@@ -21,6 +18,7 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { CreateFileButton } from "@/components/file-manager/create-file-button";
 import { CreateFolderButton } from "@/components/file-manager/create-folder-button";
 import { FileActionsMenu } from "@/components/file-manager/file-actions-menu";
+import { FileSearchInput } from "@/components/file-manager/file-search-input";
 import { FolderActionsMenu } from "@/components/file-manager/folder-actions-menu";
 import Link from "next/link";
 import { PdfModalViewer } from "@/components/file-manager/pdf-fullscreen-viewer";
@@ -49,31 +47,32 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(1)} ${units[i]}`;
 }
 
+const DOC_MIME_TYPES = [
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "text/plain",
+  "text/csv",
+  "text/html",
+];
+
 type FileCategoryKey = "images" | "videos" | "audio" | "docs" | "other";
 
 function getFileCategory(mimeType: string): FileCategoryKey {
   if (mimeType.startsWith("image/")) return "images";
   if (mimeType.startsWith("video/")) return "videos";
   if (mimeType.startsWith("audio/")) return "audio";
-
-  const docTypes = [
-    "application/pdf",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.ms-excel",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-powerpoint",
-    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "text/plain",
-    "text/csv",
-    "text/html",
-  ];
-  if (docTypes.includes(mimeType)) return "docs";
-
+  if (DOC_MIME_TYPES.includes(mimeType)) return "docs";
   return "other";
 }
 
-function getPreviewType(mimeType: string): "image" | "video" | "audio" | "pdf" | "text" | "none" {
+function getPreviewType(
+  mimeType: string
+): "image" | "video" | "audio" | "pdf" | "text" | "none" {
   if (mimeType.startsWith("image/")) return "image";
   if (mimeType.startsWith("video/")) return "video";
   if (mimeType.startsWith("audio/")) return "audio";
@@ -82,20 +81,30 @@ function getPreviewType(mimeType: string): "image" | "video" | "audio" | "pdf" |
   return "none";
 }
 
+type FileFilterType = "images" | "videos" | "docs" | "audio";
+
 /* ---------- Page Component ---------- */
 
-export default async function FilesPage(props: { searchParams: Promise<SearchParams> }) {
+export default async function FilesPage(props: {
+  searchParams: Promise<SearchParams>;
+}) {
   const rawSearchParams = await props.searchParams;
+
   const fileIdParam = toSingle(rawSearchParams.fileId);
   const recentsPageParam = toSingle(rawSearchParams.recentsPage);
+  const typeParam = toSingle(rawSearchParams.type) as
+    | FileFilterType
+    | undefined;
+  const searchQuery = (toSingle(rawSearchParams.q) ?? "").trim();
+  const hasSearch = searchQuery.length > 0;
 
   const RECENTS_PAGE_SIZE = 6;
   const recentsPage = Math.max(Number(recentsPageParam || "1") || 1, 1);
 
-  // Centralized authentication and tenant resolution
+  // Auth / tenant
   const { user, tenant } = await getTenantAndUser("/files");
 
-  // Root folders for this tenant + user
+  // Root folders
   const rootFolders = await prisma.folder.findMany({
     where: {
       tenantId: tenant.id,
@@ -105,7 +114,7 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
     orderBy: { createdAt: "desc" },
   });
 
-  // All files for stats (size by type, total size)
+  // Stats
   const allFilesForStats = await prisma.file.findMany({
     where: {
       tenantId: tenant.id,
@@ -134,19 +143,36 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
 
   const totalFilesCount = allFilesForStats.length;
 
-  // Recents (paginated)
+  // ---------- Recents / filtered files ----------
+
+  const recentsBaseWhere: any = {
+    tenantId: tenant.id,
+    ownerId: user.id,
+  };
+
+  if (typeParam === "images") {
+    recentsBaseWhere.mimeType = { startsWith: "image/" };
+  } else if (typeParam === "videos") {
+    recentsBaseWhere.mimeType = { startsWith: "video/" };
+  } else if (typeParam === "audio") {
+    recentsBaseWhere.mimeType = { startsWith: "audio/" };
+  } else if (typeParam === "docs") {
+    recentsBaseWhere.mimeType = { in: DOC_MIME_TYPES };
+  }
+
+  // Prisma on your version: `mode` is not allowed on this filter
+  if (hasSearch) {
+    recentsBaseWhere.name = {
+      contains: searchQuery,
+    };
+  }
+
   const recentsTotalCount = await prisma.file.count({
-    where: {
-      tenantId: tenant.id,
-      ownerId: user.id,
-    },
+    where: recentsBaseWhere,
   });
 
   const recents = await prisma.file.findMany({
-    where: {
-      tenantId: tenant.id,
-      ownerId: user.id,
-    },
+    where: recentsBaseWhere,
     orderBy: { createdAt: "desc" },
     skip: (recentsPage - 1) * RECENTS_PAGE_SIZE,
     take: RECENTS_PAGE_SIZE,
@@ -157,7 +183,7 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
     Math.ceil(recentsTotalCount / RECENTS_PAGE_SIZE)
   );
 
-  // Selected file for right-side details (if any)
+  // Selected file for right panel
   const selectedFile = fileIdParam
     ? await prisma.file.findFirst({
         where: {
@@ -168,16 +194,20 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
       })
     : null;
 
+  const hasDetails = !!selectedFile;
   const rootPath = "Root";
+  const typeQuery = typeParam ? `&type=${typeParam}` : "";
+  const searchQueryPart = hasSearch
+    ? `&q=${encodeURIComponent(searchQuery)}`
+    : "";
 
   return (
     <div className="px-4 py-4 lg:px-6 lg:py-6 xl:px-8">
-      {/* Page heading + breadcrumb */}
+      {/* Header */}
       <div className="mb-5 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Breadcrumb />
 
-          {/* Tenant/User Info Badge */}
           <div className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary">
               <FolderOpen className="h-3 w-3" />
@@ -201,13 +231,14 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
         </div>
       </div>
 
-      {/* 3-column layout – left + middle + right (conditionally 2 or 3 columns) */}
+      {/* Layout grid: 2 cols (no detail) / 3 cols (with detail) */}
       <div
-        className="
-          grid gap-6
-          lg:[grid-template-columns:minmax(260px,280px)_minmax(0,2.7fr)_minmax(260px,320px)]
-          xl:[grid-template-columns:minmax(260px,280px)_minmax(0,3.1fr)_minmax(260px,320px)]
-        "
+        className={[
+          "grid gap-6",
+          hasDetails
+            ? "lg:[grid-template-columns:minmax(260px,280px)_minmax(0,2.7fr)_minmax(260px,320px)] xl:[grid-template-columns:minmax(260px,280px)_minmax(0,3.1fr)_minmax(260px,320px)]"
+            : "lg:[grid-template-columns:minmax(260px,280px)_minmax(0,1fr)] xl:[grid-template-columns:minmax(260px,280px)_minmax(0,1fr)]",
+        ].join(" ")}
       >
         {/* LEFT: Sidebar */}
         <section className="rounded-2xl border bg-card/95 shadow-sm backdrop-blur">
@@ -225,15 +256,8 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
           </header>
 
           <div className="space-y-4 px-5 py-4">
-            {/* Search */}
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Search files"
-                className="h-9 w-full rounded-full border bg-background pl-8 pr-3 text-xs outline-none ring-0 transition focus:border-primary focus:ring-1 focus:ring-primary/40"
-              />
-            </div>
+            {/* Search (reusable component) */}
+            <FileSearchInput placeholder="Search files" />
 
             {/* Sections */}
             <nav className="space-y-1 text-xs">
@@ -260,7 +284,7 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
               </SidebarItem>
             </nav>
 
-            {/* Storage */}
+            {/* Storage summary */}
             <div className="space-y-2 rounded-xl bg-muted/60 p-3">
               <div className="flex items-center justify-between text-[11px]">
                 <span className="font-medium text-muted-foreground">
@@ -271,15 +295,14 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
                 </span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-background">
-                {/* Fake usage bar: proportion of 10 GB, purely visual */}
                 <div className="h-full w-[20%] rounded-full bg-emerald-500" />
               </div>
               <p className="text-[10px] text-muted-foreground">
-                {formatBytes(grandTotalBytes)} used (logical)
+                {formatBytes(grandTotalBytes)} used
               </p>
             </div>
 
-            {/* Logout */}
+            {/* Logout placeholder */}
             <button className="inline-flex w-full items-center justify-start gap-2 rounded-xl border bg-background px-3 py-2 text-[11px] font-medium text-muted-foreground shadow-sm transition hover:bg-destructive/5 hover:text-destructive">
               Logout
             </button>
@@ -297,16 +320,13 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
             </div>
 
             <div className="flex items-center gap-2">
-              {/* root folder creation (no parentId passed, defaults to null) */}
               <CreateFolderButton />
-
-              {/* Upload Button in root */}
               <CreateFileButton folderId={null} currentPath={rootPath} />
             </div>
           </header>
 
           <div className="flex-1 space-y-5 px-5 py-4">
-            {/* File Types summary */}
+            {/* File types tiles */}
             <div>
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-[11px] font-semibold text-muted-foreground">
@@ -322,21 +342,29 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
                   icon={<ImageIcon className="h-4 w-4 text-violet-500" />}
                   label="Images"
                   size={formatBytes(totals.images)}
+                  href="/files?type=images&recentsPage=1"
+                  active={typeParam === "images"}
                 />
                 <FileTile
                   icon={<Video className="h-4 w-4 text-sky-500" />}
                   label="Videos"
                   size={formatBytes(totals.videos)}
+                  href="/files?type=videos&recentsPage=1"
+                  active={typeParam === "videos"}
                 />
                 <FileTile
                   icon={<FileText className="h-4 w-4 text-amber-500" />}
                   label="Docs"
                   size={formatBytes(totals.docs)}
+                  href="/files?type=docs&recentsPage=1"
+                  active={typeParam === "docs"}
                 />
                 <FileTile
                   icon={<Music className="h-4 w-4 text-pink-500" />}
                   label="Audio / Other"
                   size={formatBytes(totals.audio + totals.other)}
+                  href="/files?type=audio&recentsPage=1"
+                  active={typeParam === "audio"}
                 />
               </div>
             </div>
@@ -347,7 +375,6 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
                 <p className="text-[11px] font-semibold text-muted-foreground">
                   Folders ({rootFolders.length})
                 </p>
-                {/* View all just reloads /files for now */}
                 <Link
                   href="/files"
                   className="text-[10px] font-medium text-primary hover:underline"
@@ -388,7 +415,6 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
                         </div>
                       </Link>
 
-                      {/* Folder actions (rename/delete with alert dialog) */}
                       <FolderActionsMenu
                         folderId={folder.id}
                         folderName={folder.name}
@@ -399,15 +425,24 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
               )}
             </div>
 
-            {/* Recents (paginated) */}
+            {/* Recents / filtered files */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <p className="text-[11px] font-semibold text-muted-foreground">
-                  Recents
+                  {typeParam === "images"
+                    ? "Images"
+                    : typeParam === "videos"
+                    ? "Videos"
+                    : typeParam === "docs"
+                    ? "Docs"
+                    : typeParam === "audio"
+                    ? "Audio Files"
+                    : hasSearch
+                    ? `Search results for "${searchQuery}"`
+                    : "Recents"}
                 </p>
 
                 <div className="flex items-center gap-2">
-                  {/* "View all" goes to first recents page */}
                   <Link
                     href="/files?recentsPage=1"
                     className="text-[10px] font-medium text-primary hover:underline"
@@ -415,13 +450,12 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
                     View all
                   </Link>
 
-                  {/* Simple pagination controls */}
                   <div className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
                     <Link
                       href={`/files?recentsPage=${Math.max(
                         1,
                         recentsPage - 1
-                      )}`}
+                      )}${typeQuery}${searchQueryPart}`}
                       className={`rounded px-1.5 py-0.5 ${
                         recentsPage <= 1
                           ? "pointer-events-none opacity-40"
@@ -437,7 +471,7 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
                       href={`/files?recentsPage=${Math.min(
                         recentsTotalPages,
                         recentsPage + 1
-                      )}`}
+                      )}${typeQuery}${searchQueryPart}`}
                       className={`rounded px-1.5 py-0.5 ${
                         recentsPage >= recentsTotalPages
                           ? "pointer-events-none opacity-40"
@@ -452,7 +486,7 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
 
               {recents.length === 0 ? (
                 <div className="flex min-h-[80px] items-center justify-center rounded-xl border border-dashed bg-muted/40 text-[11px] text-muted-foreground">
-                  No recent files.
+                  No files found.
                 </div>
               ) : (
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -464,7 +498,7 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
                         className="group flex items-center justify-between rounded-2xl border bg-muted/60 px-3 py-3 text-xs shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-muted"
                       >
                         <Link
-                          href={`/files?fileId=${file.id}&recentsPage=${recentsPage}`}
+                          href={`/files?fileId=${file.id}&recentsPage=${recentsPage}${typeQuery}${searchQueryPart}`}
                           className="flex flex-1 items-center gap-3"
                         >
                           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-background">
@@ -502,62 +536,58 @@ export default async function FilesPage(props: { searchParams: Promise<SearchPar
           </div>
         </section>
 
-        {/* RIGHT: File Details – ONLY render if a file is selected */}
-       {selectedFile ? (
-  <section className="flex flex-col rounded-2xl border bg-card/95 shadow-sm backdrop-blur">
-    <header className="flex items-center justify-between border-b bg-gradient-to-r from-slate-50 to-amber-50 px-5 py-4 dark:from-slate-950 dark:to-slate-900">
-      <h2 className="text-sm font-semibold">File Details</h2>
-      <FileActionsMenu
-        fileId={selectedFile.id}
-        fileName={selectedFile.name}
-        folderId={selectedFile.folderId}
-      />
-    </header>
+        {/* RIGHT: File Details – only rendered when selectedFile exists */}
+        {hasDetails ? (
+          <section className="flex flex-col rounded-2xl border bg-card/95 shadow-sm backdrop-blur">
+            <header className="flex items-center justify-between border-b bg-gradient-to-r from-slate-50 to-amber-50 px-5 py-4 dark:from-slate-950 dark:to-slate-900">
+              <h2 className="text-sm font-semibold">File Details</h2>
+              <FileActionsMenu
+                fileId={selectedFile!.id}
+                fileName={selectedFile!.name}
+                folderId={selectedFile!.folderId}
+              />
+            </header>
 
-    <div className="flex flex-1 flex-col gap-4 px-5 py-6 text-[11px]">
-      {/* Preview */}
-      <div className="flex items-center justify-center rounded-2xl bg-muted/60 p-3">
-        <FilePreview
-          mimeType={selectedFile.mimeType}
-          url={selectedFile.url}
-          name={selectedFile.name}
-        />
-      </div>
+            <div className="flex flex-1 flex-col gap-4 px-5 py-6 text-[11px]">
+              <div className="flex items-center justify-center rounded-2xl bg-muted/60 p-3">
+                <FilePreview
+                  mimeType={selectedFile!.mimeType}
+                  url={selectedFile!.url}
+                  name={selectedFile!.name}
+                />
+              </div>
 
-      {/* ✅ Download Button – KEEP this functionality */}
-      <div className="flex justify-end">
-        <a
-          href={selectedFile.url}
-          download={selectedFile.name}
-          className="inline-flex items-center gap-1 rounded-full border bg-background px-3 py-1 text-[11px] font-medium shadow-sm hover:bg-muted"
-        >
-          <Download className="h-3 w-3" />
-          Download
-        </a>
-      </div>
+              <div className="flex justify-end">
+                <a
+                  href={selectedFile!.url}
+                  download={selectedFile!.name}
+                  className="inline-flex items-center gap-1 rounded-full border bg-background px-3 py-1 text-[11px] font-medium shadow-sm hover:bg-muted"
+                >
+                  <Download className="h-3 w-3" />
+                  Download
+                </a>
+              </div>
 
-      {/* Basic details */}
-      <DetailRow label="File Name" value={selectedFile.name} />
-      <DetailRow
-        label="Size"
-        value={formatBytes(selectedFile.size)}
-      />
-      <DetailRow
-        label="MIME Type"
-        value={selectedFile.mimeType || "Unknown"}
-      />
-      <DetailRow
-        label="Location"
-        value={
-          selectedFile.folderId
-            ? "Inside a folder (see middle column)"
-            : "Root"
-        }
-      />
-    </div>
-  </section>
-) : null}
-
+              <DetailRow label="File Name" value={selectedFile!.name} />
+              <DetailRow
+                label="Size"
+                value={formatBytes(selectedFile!.size)}
+              />
+              <DetailRow
+                label="MIME Type"
+                value={selectedFile!.mimeType || "Unknown"}
+              />
+              <DetailRow
+                label="Location"
+                value={
+                  selectedFile!.folderId
+                    ? "Inside a folder (see middle column)"
+                    : "Root"
+                }
+              />
+            </div>
+          </section>
+        ) : null}
       </div>
     </div>
   );
@@ -596,13 +626,25 @@ function FileTile({
   icon,
   label,
   size,
+  href,
+  active,
 }: {
   icon: React.ReactNode;
   label: string;
   size: string;
+  href: string;
+  active?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl bg-muted/60 px-3 py-3 shadow-sm transition hover:-translate-y-0.5 hover:bg-muted">
+    <Link
+      href={href}
+      className={[
+        "flex items-center gap-3 rounded-2xl px-3 py-3 text-xs shadow-sm transition hover:-translate-y-0.5",
+        active
+          ? "border border-primary/50 bg-primary/5"
+          : "border bg-muted/60 hover:border-primary/40 hover:bg-muted",
+      ].join(" ")}
+    >
       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-background">
         {icon}
       </div>
@@ -610,16 +652,14 @@ function FileTile({
         <span className="text-xs font-medium">{label}</span>
         <span className="text-[10px] text-muted-foreground">{size}</span>
       </div>
-    </div>
+    </Link>
   );
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-0.5 rounded-lg bg-muted/40 px-3 py-2">
-      <p className="text-[10px] font-semibold text-muted-foreground">
-        {label}
-      </p>
+      <p className="text-[10px] font-semibold text-muted-foreground">{label}</p>
       <p className="text-[11px] break-words">{value}</p>
     </div>
   );
@@ -664,13 +704,11 @@ function FilePreview({
     );
   }
 
-  // ⬇️ PDF: DON'T embed it in the card.
-  // Just show a "View PDF" button that opens the modal popup.
   if (type === "pdf") {
     return (
       <div className="flex flex-col items-center gap-2 text-[11px]">
         <p className="text-muted-foreground">
-          This is a PDF file. Click below to view it in a modal.
+          This is a PDF file. Click below to view it.
         </p>
         <PdfModalViewer url={url} />
       </div>

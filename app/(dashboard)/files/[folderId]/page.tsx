@@ -6,9 +6,7 @@ import {
   FileText,
   FolderOpen,
   Image as ImageIcon,
-  MoreHorizontal,
   Music,
-  Package2,
   Video,
 } from "lucide-react";
 
@@ -85,7 +83,6 @@ export default async function FolderPage(props: {
   });
 
   if (!currentFolder) {
-    // simple 404
     return (
       <div className="p-6 text-sm text-red-500">
         Folder not found or you don&apos;t have access.
@@ -95,26 +92,26 @@ export default async function FolderPage(props: {
 
   // Build breadcrumb for this folder (Root -> ... -> current)
   const breadcrumbFolders: { id: string; name: string }[] = [];
-  let cur = currentFolder;
-  // climb up to root
+  let cur: any = currentFolder;
+
   while (cur) {
     breadcrumbFolders.unshift({ id: cur.id, name: cur.name });
     if (!cur.parentId) break;
-    cur = (await prisma.folder.findFirst({
+    cur = await prisma.folder.findFirst({
       where: {
         id: cur.parentId,
         tenantId: tenant.id,
         createdById: user.id,
       },
       include: { parent: true },
-    })) as any;
+    });
     if (!cur) break;
   }
 
   const currentPath =
     "Root / " + breadcrumbFolders.map((f) => f.name).join(" / ");
 
-  // Subfolders inside this folder, scoped per tenant + user
+  // Subfolders
   const subfolders = await prisma.folder.findMany({
     where: {
       tenantId: tenant.id,
@@ -124,7 +121,7 @@ export default async function FolderPage(props: {
     orderBy: { createdAt: "desc" },
   });
 
-  // Files inside this folder (paginated, per tenant + owner)
+  // Files in this folder (paginated)
   const filesTotalCount = await prisma.file.count({
     where: {
       tenantId: tenant.id,
@@ -159,6 +156,8 @@ export default async function FolderPage(props: {
         },
       })
     : null;
+
+  const hasDetails = !!selectedFile;
 
   return (
     <div className="px-4 py-4 lg:px-6 lg:py-6 xl:px-8">
@@ -213,14 +212,16 @@ export default async function FolderPage(props: {
         </div>
       </div>
 
+      {/* 2 cols (no details) / 3 cols (with details) */}
       <div
-        className="
-          grid gap-6
-          lg:[grid-template-columns:minmax(260px,280px)_minmax(0,2.7fr)_minmax(260px,320px)]
-          xl:[grid-template-columns:minmax(260px,280px)_minmax(0,3.1fr)_minmax(260px,320px)]
-        "
+        className={[
+          "grid gap-6",
+          hasDetails
+            ? "lg:[grid-template-columns:minmax(260px,280px)_minmax(0,2.7fr)_minmax(260px,320px)] xl:[grid-template-columns:minmax(260px,280px)_minmax(0,3.1fr)_minmax(260px,320px)]"
+            : "lg:[grid-template-columns:minmax(260px,280px)_minmax(0,1fr)] xl:[grid-template-columns:minmax(260px,280px)_minmax(0,1fr)]",
+        ].join(" ")}
       >
-        {/* LEFT: Basic sidebar (simpler than root) */}
+        {/* LEFT: Folder stats */}
         <section className="rounded-2xl border bg-card/95 shadow-sm backdrop-blur">
           <header className="flex items-center justify-between border-b bg-gradient-to-r from-emerald-50/70 to-slate-50 px-5 py-4 dark:from-slate-900 dark:to-slate-950">
             <div>
@@ -232,9 +233,7 @@ export default async function FolderPage(props: {
               folderId={currentFolder.id}
               folderName={currentFolder.name}
               triggerClassName="inline-flex h-8 w-8 items-center justify-center rounded-full border bg-background text-[11px] text-muted-foreground shadow-sm transition hover:bg-accent hover:text-foreground"
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-            </FolderActionsMenu>
+            />
           </header>
 
           <div className="space-y-3 px-5 py-4 text-[11px]">
@@ -414,56 +413,54 @@ export default async function FolderPage(props: {
         </section>
 
         {/* RIGHT: File Details (only if a file is selected) */}
-     {selectedFile ? (
-  <section className="flex flex-col rounded-2xl border bg-card/95 shadow-sm backdrop-blur">
-    <header className="flex items-center justify-between border-b bg-gradient-to-r from-slate-50 to-amber-50 px-5 py-4 dark:from-slate-950 dark:to-slate-900">
-      <h2 className="text-sm font-semibold">File Details</h2>
-      <FileActionsMenu
-        fileId={selectedFile.id}
-        fileName={selectedFile.name}
-        folderId={selectedFile.folderId}
-      />
-    </header>
+        {selectedFile ? (
+          <section className="flex flex-col rounded-2xl border bg-card/95 shadow-sm backdrop-blur">
+            <header className="flex items-center justify-between border-b bg-gradient-to-r from-slate-50 to-amber-50 px-5 py-4 dark:from-slate-950 dark:to-slate-900">
+              <h2 className="text-sm font-semibold">File Details</h2>
+              <FileActionsMenu
+                fileId={selectedFile.id}
+                fileName={selectedFile.name}
+                folderId={selectedFile.folderId}
+              />
+            </header>
 
-    <div className="flex flex-1 flex-col gap-4 px-5 py-6 text-[11px]">
-      <div className="flex items-center justify-center rounded-2xl bg-muted/60 p-3">
-        <FilePreview
-          mimeType={selectedFile.mimeType}
-          url={selectedFile.url}
-          name={selectedFile.name}
-        />
-      </div>
+            <div className="flex flex-1 flex-col gap-4 px-5 py-6 text-[11px]">
+              <div className="flex items-center justify-center rounded-2xl bg-muted/60 p-3">
+                <FilePreview
+                  mimeType={selectedFile.mimeType}
+                  url={selectedFile.url}
+                  name={selectedFile.name}
+                />
+              </div>
 
-      {/* ✅ Download Button */}
-      <div className="flex justify-end">
-        <a
-          href={selectedFile.url}
-          download={selectedFile.name}
-          className="inline-flex items-center gap-1 rounded-full border bg-background px-3 py-1 text-[11px] font-medium shadow-sm hover:bg-muted"
-        >
-          <Download className="h-3 w-3" />
-          Download
-        </a>
-      </div>
+              <div className="flex justify-end">
+                <a
+                  href={selectedFile.url}
+                  download={selectedFile.name}
+                  className="inline-flex items-center gap-1 rounded-full border bg-background px-3 py-1 text-[11px] font-medium shadow-sm hover:bg-muted"
+                >
+                  <Download className="h-3 w-3" />
+                  Download
+                </a>
+              </div>
 
-      <DetailRow label="File Name" value={selectedFile.name} />
-      <DetailRow
-        label="Size"
-        value={formatBytes(selectedFile.size)}
-      />
-      <DetailRow
-        label="MIME Type"
-        value={selectedFile.mimeType || "Unknown"}
-      />
-      <DetailRow label="Location" value={currentPath} />
-      <DetailRow
-        label="Created At"
-        value={selectedFile.createdAt.toISOString()}
-      />
-    </div>
-  </section>
-) : null}
-
+              <DetailRow label="File Name" value={selectedFile.name} />
+              <DetailRow
+                label="Size"
+                value={formatBytes(selectedFile.size)}
+              />
+              <DetailRow
+                label="MIME Type"
+                value={selectedFile.mimeType || "Unknown"}
+              />
+              <DetailRow label="Location" value={currentPath} />
+              <DetailRow
+                label="Created At"
+                value={selectedFile.createdAt.toISOString()}
+              />
+            </div>
+          </section>
+        ) : null}
       </div>
     </div>
   );
@@ -519,14 +516,14 @@ function FilePreview({
     );
   }
 
-  // ✅ PDF → full-screen viewer button
+  // PDF → modal viewer with full-screen button inside
   if (type === "pdf") {
     return (
       <div className="flex flex-col items-center gap-2 text-[11px]">
         <p className="text-muted-foreground">
-          This is a PDF file. Click below to view in full screen.
+          This is a PDF file. Click below to view it.
         </p>
-        <PdfFullscreenViewer url={url} />
+        <PdfModalViewer url={url} />
       </div>
     );
   }
