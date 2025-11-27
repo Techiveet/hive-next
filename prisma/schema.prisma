@@ -50,8 +50,8 @@ model Session {
 
 model Account {
   id                    String    @id
-  accountId             String    @db.Text
-  providerId            String    @db.Text
+  accountId             String
+  providerId            String
   userId                String
   user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   accessToken           String?   @db.Text
@@ -64,7 +64,8 @@ model Account {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  @@index([userId(length: 191)])
+  @@index([userId])
+  @@unique([providerId, accountId])
   @@map("account")
 }
 
@@ -130,7 +131,7 @@ model Role {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  userRoles   UserRole[]
+  userRoles     UserRole[]
   permissions RolePermission[]
 
   // key is unique PER tenant; global roles have tenantId = null
@@ -183,8 +184,8 @@ model UserRole {
   roleId   Int
   tenantId String? // null = central role
 
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role   Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
   tenant Tenant? @relation(fields: [tenantId], references: [id])
 
   @@unique([userId, roleId, tenantId])

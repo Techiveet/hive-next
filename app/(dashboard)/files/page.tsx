@@ -23,8 +23,10 @@ import { FolderActionsMenu } from "@/components/file-manager/folder-actions-menu
 import Link from "next/link";
 import { PdfModalViewer } from "@/components/file-manager/pdf-fullscreen-viewer";
 import type React from "react";
+import { getCurrentUserPermissions } from "@/lib/rbac";
 import { getTenantAndUser } from "@/lib/get-tenant-and-user";
 import { prisma } from "@/lib/prisma";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 /* ---------- Server action: update global file manager settings ---------- */
@@ -158,17 +160,39 @@ export default async function FilesPage(props: {
 }) {
   const rawSearchParams = await props.searchParams;
 
+  // Auth / tenant
+  const { user, tenant } = await getTenantAndUser("/files");
+
+  // RBAC permissions for this tenant context
+  const userPermissions = await getCurrentUserPermissions(tenant.id);
+  const canManageFiles = userPermissions.includes("manage_files");
+  const canViewSettingsSection = userPermissions.includes(
+    "manage_storage_settings"
+  );
+
+  // If user has no manage_files permission → no access to /files at all
+  if (!canManageFiles) {
+    redirect("/"); // URL won't work without manage_files
+  }
+
   const fileIdParam = toSingle(rawSearchParams.fileId);
   const recentsPageParam = toSingle(rawSearchParams.recentsPage);
   const typeParam = toSingle(rawSearchParams.type) as
     | FileFilterType
     | undefined;
+
   const sectionParam = toSingle(
     rawSearchParams.section
   ) as SectionType | undefined;
+
   const viewParam = toSingle(rawSearchParams.view) as ViewType | undefined;
 
-  const section: SectionType = sectionParam ?? "my-files";
+  // Coerce section based on permission: settings requires manage_storage_settings
+  let section: SectionType = sectionParam ?? "my-files";
+  if (section === "settings" && !canViewSettingsSection) {
+    section = "my-files";
+  }
+
   const view: ViewType = viewParam === "list" ? "list" : "grid";
   const isListView = view === "list";
 
@@ -177,9 +201,6 @@ export default async function FilesPage(props: {
 
   const RECENTS_PAGE_SIZE = section === "recent" ? 12 : 6;
   const recentsPage = Math.max(Number(recentsPageParam || "1") || 1, 1);
-
-  // Auth / tenant
-  const { user, tenant } = await getTenantAndUser("/files");
 
   const isCentralAdmin =
     (user as any)?.role === "CENTRAL_ADMIN" ||
@@ -474,13 +495,15 @@ export default async function FilesPage(props: {
                 </span>
               </SidebarItem>
 
-              <SidebarItem
-                href={`/files?section=settings&view=${view}`}
-                active={section === "settings"}
-                icon={<Settings2 className="h-3.5 w-3.5" />}
-              >
-                Settings
-              </SidebarItem>
+              {canViewSettingsSection && (
+                <SidebarItem
+                  href={`/files?section=settings&view=${view}`}
+                  active={section === "settings"}
+                  icon={<Settings2 className="h-3.5 w-3.5" />}
+                >
+                  Settings
+                </SidebarItem>
+              )}
             </nav>
 
             {/* Storage summary */}
@@ -743,7 +766,7 @@ export default async function FilesPage(props: {
                                 <span className="truncate font-medium">
                                   {file.name}
                                 </span>
-                                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                <span className="whitespace-nowrap text-[10px] text-muted-foreground">
                                   {formatBytes(file.size)}
                                 </span>
                               </div>
@@ -755,7 +778,6 @@ export default async function FilesPage(props: {
                               folderId={file.folderId}
                               isFavorite={file.isFavorite}
                               isTrashed={!!file.deletedAt}
-                              // you can read requireDeleteConfirmation in the component to decide AlertDialog etc
                             />
                           </div>
                         );
@@ -901,7 +923,7 @@ function SidebarItem({
       <span className="flex h-7 w-7 items-center justify-center rounded-full bg-background text-xs shadow-sm">
         {icon}
       </span>
-      <span className="flex-1 text-left flex items-center gap-1">
+      <span className="flex flex-1 items-center gap-1 text-left">
         {children}
       </span>
     </Comp>
@@ -1085,7 +1107,7 @@ function SettingsPanel({
       </div>
 
       {/* Storage / upload policy */}
-      <div className="rounded-2xl border bg-muted/40 p-4 space-y-3">
+      <div className="space-y-3 rounded-2xl border bg-muted/40 p-4">
         <h3 className="text-xs font-semibold">Storage Settings</h3>
         <p className="text-[10px] text-muted-foreground">
           Global upload restrictions applied to all tenants and users.
@@ -1103,7 +1125,7 @@ function SettingsPanel({
               name="maxFileSizeMb"
               defaultValue={maxFileSizeMb}
               disabled={readonly}
-              className="h-7 w-20 rounded border px-2 text-right text-[10px] bg-card disabled:opacity-60"
+              className="h-7 w-20 rounded border bg-card px-2 text-right text-[10px] disabled:opacity-60"
             />
           </label>
           <p className="text-[10px] text-muted-foreground">
@@ -1111,7 +1133,7 @@ function SettingsPanel({
           </p>
         </div>
 
-        {/* Allowed extensions (Select2-like tags via CSV input) */}
+        {/* Allowed extensions */}
         <div className="space-y-1 rounded-xl bg-background px-3 py-2 text-[10px]">
           <p className="mb-1 font-semibold text-muted-foreground">
             Allowed file extensions
@@ -1134,7 +1156,7 @@ function SettingsPanel({
             defaultValue={allowedExtensionsCsv}
             disabled={readonly}
             placeholder=".pdf, .docx, .xlsx, .png, .jpg"
-            className="h-7 w-full rounded border px-2 text-[10px] bg-card disabled:opacity-60"
+            className="h-7 w-full rounded border bg-card px-2 text-[10px] disabled:opacity-60"
           />
 
           <p className="text-[10px] text-muted-foreground">
@@ -1146,7 +1168,7 @@ function SettingsPanel({
       </div>
 
       {/* Other file manager behaviours */}
-      <div className="rounded-2xl border bg-muted/40 p-4 space-y-3">
+      <div className="space-y-3 rounded-2xl border bg-muted/40 p-4">
         <h3 className="text-xs font-semibold">Behaviour</h3>
 
         {/* Auto empty recycle bin */}
@@ -1161,7 +1183,7 @@ function SettingsPanel({
               name="autoEmptyRecycleBinDays"
               defaultValue={autoEmptyRecycleBinDays}
               disabled={readonly}
-              className="h-7 w-20 rounded border px-2 text-right text-[10px] bg-card disabled:opacity-60"
+              className="h-7 w-20 rounded border bg-card px-2 text-right text-[10px] disabled:opacity-60"
             />
           </label>
           <p className="text-[10px] text-muted-foreground">

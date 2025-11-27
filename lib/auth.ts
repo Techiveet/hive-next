@@ -16,8 +16,8 @@ export const auth = betterAuth({
 
   emailAndPassword: {
     enabled: true,
-    autoSignIn: true,
-    minPasswordLength: 8,
+    // autoSignIn: true is not needed for admin-created users
+    minPasswordLength: 8, 
   },
 
   /**

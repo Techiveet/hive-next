@@ -9,7 +9,9 @@ import { RolesTab } from "./_components/roles-tab";
 import { SecurityTabs } from "./_components/security-tabs";
 import { UsersTab } from "./_components/users-tab";
 import { getCurrentSession } from "@/lib/auth-server";
+import { getCurrentUserPermissions } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
+import { redirect } from "next/navigation";
 
 // ----------------------------------------------------------------------
 // CONFIGURATION
@@ -44,12 +46,6 @@ export default async function SecurityPage({
 }) {
   const resolvedSearchParams = await searchParams;
 
-  const tab: "users" | "roles" | "permissions" =
-    resolvedSearchParams?.tab === "roles" ||
-    resolvedSearchParams?.tab === "permissions"
-      ? resolvedSearchParams.tab
-      : "users";
-
   // 1. Auth & Session Check
   const { user } = await getCurrentSession();
 
@@ -80,28 +76,41 @@ export default async function SecurityPage({
 
   // 3. Determine Context (Central vs Tenant)
   // Logic: If user has a tenant membership, default to that context.
-  // Otherwise, check if they are a central superadmin.
   const activeMembership = dbUser.tenantMemberships[0] ?? null;
   const activeTenantId = activeMembership?.tenantId ?? null;
   const activeTenantName = activeMembership?.tenant?.name ?? null;
 
-  const hasCentralSuperadmin = dbUser.userRoles.some(
-    (ur) => ur.role.key === "central_superadmin" && ur.tenantId === null
-  );
+  // 4. Permission checks (RBAC)
+  const userPermissions = await getCurrentUserPermissions(activeTenantId);
 
+  // Must have view_security to access this page at all
+  if (!userPermissions.includes("view_security")) {
+    redirect("/"); // URL won't work without this permission
+  }
+
+  const canViewUsersTab = userPermissions.includes("manage_users");
+  const canViewRolesTab = userPermissions.includes("manage_roles");
+  const canViewPermissionsTab = userPermissions.includes("manage_roles");
+
+  // If somehow they have view_security but no tab-specific permissions, block
+  if (!canViewUsersTab && !canViewRolesTab && !canViewPermissionsTab) {
+    return (
+      <div className="p-4 text-xs text-muted-foreground">
+        You do not have permission to view any security sections.
+      </div>
+    );
+  }
+
+  // 5. Determine scope + description + permission filter for listing
   let scopeProp: "CENTRAL" | "TENANT" = "CENTRAL";
   let description = "";
-  
-  // 4. Permission Filtering Logic
   let permissionsWhere: any = {};
 
   if (!activeTenantId) {
     // --- CENTRAL CONTEXT ---
-    if (!hasCentralSuperadmin) {
-      return <div className="p-4 text-xs">Access Denied.</div>;
-    }
     scopeProp = "CENTRAL";
-    description = "Manage central platform security, global roles, and system permissions.";
+    description =
+      "Manage central platform security, global roles, and system permissions.";
 
     // Central sees ONLY global permissions (defined by tenantId: null)
     permissionsWhere = { tenantId: null };
@@ -129,7 +138,7 @@ export default async function SecurityPage({
     };
   }
 
-  // 5. Fetch Data Parallel
+  // 6. Fetch Data Parallel
   const [rolesRaw, permissionsRaw] = await Promise.all([
     // Fetch Roles
     prisma.role.findMany({
@@ -150,16 +159,13 @@ export default async function SecurityPage({
     }),
   ]);
 
-  // 6. Data Normalization (DTOs)
+  // 7. Data Normalization (DTOs)
 
-  // Map permissions to include an `isGlobal` flag. 
-  // This helps the UI render "System" badges and lock buttons.
   const permissions = permissionsRaw.map((p) => ({
     ...p,
     isGlobal: p.tenantId === null,
   }));
 
-  // Normalize roles structure
   const roles = rolesRaw.map((r) => ({
     id: r.id,
     key: r.key,
@@ -172,6 +178,23 @@ export default async function SecurityPage({
       name: rp.permission.name,
     })),
   }));
+
+  // 8. Resolve active tab based on permissions + query
+  let tab: "users" | "roles" | "permissions";
+
+  const requested = resolvedSearchParams?.tab;
+
+  if (requested === "roles" && canViewRolesTab) {
+    tab = "roles";
+  } else if (requested === "permissions" && canViewPermissionsTab) {
+    tab = "permissions";
+  } else if (canViewUsersTab) {
+    tab = "users";
+  } else if (canViewRolesTab) {
+    tab = "roles";
+  } else {
+    tab = "permissions";
+  }
 
   return (
     <div className="px-4 py-4 lg:px-6 lg:py-6 xl:px-8">
@@ -192,33 +215,44 @@ export default async function SecurityPage({
       {/* Tabs */}
       <SecurityTabs defaultTab={tab} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="roles">Roles</TabsTrigger>
-          <TabsTrigger value="permissions">Permissions</TabsTrigger>
+          {canViewUsersTab && <TabsTrigger value="users">Users</TabsTrigger>}
+          {canViewRolesTab && <TabsTrigger value="roles">Roles</TabsTrigger>}
+          {canViewPermissionsTab && (
+            <TabsTrigger value="permissions">Permissions</TabsTrigger>
+          )}
         </TabsList>
 
         {/* Tab 1: Users */}
-        <TabsContent value="users" className="space-y-4">
-          <UsersTab tenantId={activeTenantId} tenantName={activeTenantName} />
-        </TabsContent>
+        {canViewUsersTab && (
+          <TabsContent value="users" className="space-y-4">
+            <UsersTab
+              tenantId={activeTenantId}
+              tenantName={activeTenantName}
+            />
+          </TabsContent>
+        )}
 
         {/* Tab 2: Roles */}
-        <TabsContent value="roles" className="space-y-4">
-          <RolesTab
-            roles={roles}
-            allPermissions={permissions}
-            scopeProp={scopeProp}
-            tenantId={activeTenantId}
-          />
-        </TabsContent>
+        {canViewRolesTab && (
+          <TabsContent value="roles" className="space-y-4">
+            <RolesTab
+              roles={roles}
+              allPermissions={permissions}
+              scopeProp={scopeProp}
+              tenantId={activeTenantId}
+            />
+          </TabsContent>
+        )}
 
         {/* Tab 3: Permissions */}
-        <TabsContent value="permissions" className="space-y-4">
-          <PermissionsTab
-            permissions={permissions}
-            tenantId={activeTenantId}
-          />
-        </TabsContent>
+        {canViewPermissionsTab && (
+          <TabsContent value="permissions" className="space-y-4">
+            <PermissionsTab
+              permissions={permissions}
+              tenantId={activeTenantId}
+            />
+          </TabsContent>
+        )}
       </SecurityTabs>
     </div>
   );

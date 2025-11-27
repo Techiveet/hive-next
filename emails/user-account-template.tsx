@@ -34,8 +34,6 @@ export interface UserAccountEmailProps {
   roleName?: string;
   tenantName?: string;
   loginUrl?: string;
-
-  // NEW
   tenantDomain?: string;
 
   /** Only used for `kind === "updated"` */
@@ -92,7 +90,6 @@ export const UserAccountEmail = ({
   }/logo/logo.png`;
 
   const statusIsActive = status === "ACTIVE";
-
   const displayName = name || email;
   const displayTenant = tenantName || "Hive";
 
@@ -113,12 +110,11 @@ export const UserAccountEmail = ({
       "Your account has been deactivated. You will no longer be able to sign in until an administrator re-activates it.";
   }
 
-  const showPasswordBlock = !!password; // we only pass password when we want to show it
+  const showPasswordBlock = !!password; // only when we explicitly pass it
   const showRoleBlock = !!roleName;
 
   const hasUpdateDetails =
-    kind === "updated" &&
-    !!(changedName || changedPassword || changedRole);
+    kind === "updated" && !!(changedName || changedPassword || changedRole);
 
   const allUpdated =
     kind === "updated" &&
@@ -162,7 +158,7 @@ export const UserAccountEmail = ({
 
             <Text style={styles.contentText}>{intro}</Text>
 
-            {/* STATUS + ROLE ROW */}
+            {/* STATUS + ROLE */}
             <Row style={{ marginTop: 8, marginBottom: 4 }}>
               <Column>
                 <Text style={styles.contentText}>
@@ -188,7 +184,8 @@ export const UserAccountEmail = ({
                 </Column>
               )}
             </Row>
-             {tenantDomain && (
+
+            {tenantDomain && (
               <Text style={styles.contentText}>
                 Workspace domain:{" "}
                 <span style={styles.domainBadge}>{tenantDomain}</span>
@@ -250,7 +247,7 @@ export const UserAccountEmail = ({
               </Section>
             )}
 
-            {/* CALL TO ACTION */}
+            {/* CTA */}
             {statusIsActive && (
               <Button href={appUrl} style={styles.primaryButton}>
                 Open Admin Panel
@@ -379,7 +376,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     fontWeight: 600,
   },
-   domainBadge: {
+  domainBadge: {
     display: "inline-block",
     padding: "2px 8px",
     borderRadius: 999,

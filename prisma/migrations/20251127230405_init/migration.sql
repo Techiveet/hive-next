@@ -32,8 +32,8 @@ CREATE TABLE `session` (
 -- CreateTable
 CREATE TABLE `account` (
     `id` VARCHAR(191) NOT NULL,
-    `accountId` TEXT NOT NULL,
-    `providerId` TEXT NOT NULL,
+    `accountId` VARCHAR(191) NOT NULL,
+    `providerId` VARCHAR(191) NOT NULL,
     `userId` VARCHAR(191) NOT NULL,
     `accessToken` TEXT NULL,
     `refreshToken` TEXT NULL,
@@ -45,7 +45,8 @@ CREATE TABLE `account` (
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
-    INDEX `account_userId_idx`(`userId`(191)),
+    INDEX `account_userId_idx`(`userId`),
+    UNIQUE INDEX `account_providerId_accountId_key`(`providerId`, `accountId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
