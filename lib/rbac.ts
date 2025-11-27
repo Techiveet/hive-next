@@ -1,43 +1,53 @@
 // lib/rbac.ts
 
-import { RoleScope } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 /**
- * Get (or create) the central_superadmin role.
+ * Ensure the `central_superadmin` role always has *all* permissions.
+ * Safe to call from seed or from a cron/job whenever you add new permissions.
  */
-export async function getCentralSuperAdminRole() {
-  const role = await prisma.role.upsert({
-    where: { key: "central_superadmin" },
-    update: {},
-    create: {
+export async function syncCentralSuperAdminPermissions() {
+  // 1) Find global central_superadmin role (tenantId = null)
+  const centralRole = await prisma.role.findFirst({
+    where: {
       key: "central_superadmin",
-      name: "Central Super Administrator",
-      scope: RoleScope.CENTRAL,
+      tenantId: null,
     },
   });
 
-  return role;
-}
+  if (!centralRole) {
+    console.warn(
+      "[RBAC] central_superadmin role not found – nothing to sync."
+    );
+    return;
+  }
 
-/**
- * Make sure central_superadmin has *all* permissions in the system.
- * Call this after seeding or when you add new permissions.
- */
-export async function syncCentralSuperAdminPermissions() {
-  const centralRole = await getCentralSuperAdminRole();
-
-  const permissions = await prisma.permission.findMany({
+  // 2) Load all global permissions
+  const allPermissions = await prisma.permission.findMany({
+    where: { tenantId: null },
     select: { id: true },
   });
 
+  if (!allPermissions.length) {
+    console.warn("[RBAC] No permissions found – nothing to sync.");
+    return;
+  }
+
+  // 3) Clear existing central_superadmin rolePermission links
+  await prisma.rolePermission.deleteMany({
+    where: { roleId: centralRole.id },
+  });
+
+  // 4) Attach everything
   await prisma.rolePermission.createMany({
-    data: permissions.map((p) => ({
+    data: allPermissions.map((p) => ({
       roleId: centralRole.id,
       permissionId: p.id,
     })),
     skipDuplicates: true,
   });
 
-  return { centralRoleId: centralRole.id, count: permissions.length };
+  console.log(
+    `[RBAC] Synced central_superadmin with ${allPermissions.length} permissions.`
+  );
 }

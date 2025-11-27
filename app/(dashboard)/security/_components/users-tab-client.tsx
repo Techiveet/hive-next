@@ -14,11 +14,23 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  Calendar,
+  Eye,
+  Lock,
+  Mail,
+  Pencil,
+  PlusCircle,
+  RefreshCw,
+  Shield,
+  Trash2,
+  User as UserIcon,
+} from "lucide-react";
+import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   createOrUpdateUserAction,
@@ -26,13 +38,17 @@ import {
   toggleUserActiveAction,
 } from "../users-actions";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table";
+import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+
+/* ----------------------------- Types ----------------------------- */
 
 type RoleLite = {
   id: number;
@@ -53,58 +69,111 @@ type UserForClient = {
   }[];
 };
 
+/* ----------------------------- Helpers ----------------------------- */
+
+function generateStrongPassword(length = 12) {
+  const chars =
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
+  return Array.from(
+    { length },
+    () => chars[Math.floor(Math.random() * chars.length)]
+  ).join("");
+}
+
+function initials(name?: string | null, email?: string) {
+  const src = (name || email || "").trim();
+  if (!src) return "??";
+  const parts = src.split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return src[0]!.toUpperCase();
+}
+
+/* ----------------------------- Component ----------------------------- */
+
 export function UsersTabClient({
   users,
   assignableRoles,
-  centralRoleMap, // kept for future use
+  centralRoleMap, // still accepted, even if unused
   currentUserId,
+  tenantId,
+  tenantName,
 }: {
   users: UserForClient[];
   assignableRoles: RoleLite[];
   centralRoleMap: Record<number, string>;
   currentUserId: string;
+  tenantId?: string | null;
+  tenantName?: string | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = React.useTransition();
-  const [openDialog, setOpenDialog] = React.useState(false);
+
+  // --- Dialog States ---
+  const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
+  const [viewDialogOpen, setViewDialogOpen] = React.useState(false);
+
+  // --- Selected Data States ---
   const [editingUser, setEditingUser] = React.useState<UserForClient | null>(
     null
   );
+  const [viewUser, setViewUser] = React.useState<UserForClient | null>(null);
 
+  // --- Form States ---
   const [formName, setFormName] = React.useState("");
   const [formEmail, setFormEmail] = React.useState("");
   const [formPassword, setFormPassword] = React.useState("");
+  const [formConfirmPassword, setFormConfirmPassword] = React.useState("");
   const [formRoleId, setFormRoleId] = React.useState<number | "">("");
 
+  const isTenantContext = !!tenantId;
+
+  // --- Auth & Protection Logic ---
   const isProtectedUser = React.useCallback(
     (u: UserForClient) => {
-      const centralRole = u.userRoles.find(
-        (ur) => ur.role.scope === "CENTRAL" && ur.tenantId === null
-      );
-      const isSuperadmin = centralRole?.role.key === "central_superadmin";
       const isSelf = u.id === currentUserId;
-      return isSuperadmin || isSelf;
+
+      const isCentralSuperadmin = u.userRoles.some(
+        (ur) => ur.role.key === "central_superadmin" && ur.tenantId === null
+      );
+
+      const isTenantSuperadmin = tenantId
+        ? u.userRoles.some(
+            (ur) =>
+              ur.role.key === "tenant_superadmin" && ur.tenantId === tenantId
+          )
+        : false;
+
+      return isSelf || isCentralSuperadmin || isTenantSuperadmin;
     },
-    [currentUserId]
+    [currentUserId, tenantId]
   );
 
-  function initials(name?: string | null, email?: string) {
-    const src = (name || email || "").trim();
-    if (!src) return "??";
-    const parts = src.split(/\s+/);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
+  // --- Helper to get Role Name ---
+  function getPrimaryRoleName(u: UserForClient): string {
+    if (tenantId) {
+      const r = u.userRoles.find((ur) => ur.tenantId === tenantId);
+      return r?.role.name ?? "Member";
     }
-    return src[0]!.toUpperCase();
+    const r = u.userRoles.find(
+      (ur) => ur.role.scope === "CENTRAL" && ur.tenantId === null
+    );
+    return r?.role.name ?? "User";
+  }
+
+  // --- Handlers ---
+
+  function resetForm() {
+    setFormName("");
+    setFormEmail("");
+    setFormPassword("");
+    setFormConfirmPassword("");
+    setFormRoleId(assignableRoles[0]?.id ?? "");
   }
 
   function openCreate() {
     setEditingUser(null);
-    setFormName("");
-    setFormEmail("");
-    setFormPassword("");
-    setFormRoleId(assignableRoles[0]?.id ?? "");
-    setOpenDialog(true);
+    resetForm();
+    setCreateDialogOpen(true);
   }
 
   function openEdit(user: UserForClient) {
@@ -112,78 +181,76 @@ export function UsersTabClient({
     setFormName(user.name || "");
     setFormEmail(user.email);
     setFormPassword("");
+    setFormConfirmPassword("");
 
-    const centralRole = user.userRoles.find(
-      (ur) => ur.role.scope === "CENTRAL" && ur.tenantId === null
-    );
-    const match = assignableRoles.find(
-      (r) => r.key === centralRole?.role.key
-    );
+    let currentRoleKey: string | undefined;
+    if (tenantId) {
+      const r = user.userRoles.find((ur) => ur.tenantId === tenantId);
+      currentRoleKey = r?.role.key;
+    } else {
+      const r = user.userRoles.find(
+        (ur) => ur.role.scope === "CENTRAL" && ur.tenantId === null
+      );
+      currentRoleKey = r?.role.key;
+    }
+
+    const match = assignableRoles.find((r) => r.key === currentRoleKey);
     setFormRoleId(match?.id ?? "");
-    setOpenDialog(true);
+    setCreateDialogOpen(true);
+  }
+
+  function openView(user: UserForClient) {
+    setViewUser(user);
+    setViewDialogOpen(true);
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!formRoleId) return;
+
+    if (formPassword && formPassword !== formConfirmPassword) {
+      toast.error("Passwords do not match");
+      return;
+    }
+    if (!editingUser && !formPassword) {
+      toast.error("Password is required for new users");
+      return;
+    }
 
     startTransition(async () => {
       try {
         await createOrUpdateUserAction({
           id: editingUser?.id ?? null,
-          name: formName,
-          email: formEmail,
+          name: formName.trim(),
+          email: formEmail.trim(),
           password: formPassword || null,
-          roleId: formRoleId as number,
+          roleId: Number(formRoleId),
+          tenantId: tenantId ?? null,
         });
-        toast.success(editingUser ? "User updated." : "User created.");
-        setOpenDialog(false);
+
+        toast.success(
+          editingUser
+            ? "User updated successfully"
+            : "User created successfully"
+        );
+        setCreateDialogOpen(false);
         router.refresh();
       } catch (err: any) {
-        console.error("Failed to save user", err);
-        const msg = String(err?.message || "");
-        if (msg === "USER_NAME_REQUIRED") {
-          toast.error("Name is required.");
-        } else if (msg === "USER_EMAIL_REQUIRED") {
-          toast.error("Email is required.");
-        } else if (msg === "USER_EMAIL_INVALID") {
-          toast.error("Please enter a valid email address.");
-        } else if (msg === "USER_PASSWORD_REQUIRED") {
+        console.error(err);
+        const msg = err.message || "";
+        if (msg.includes("EMAIL_IN_USE"))
+          toast.error("Email is already taken.");
+        else if (msg.includes("FORBIDDEN"))
+          toast.error("You do not have permission.");
+        else if (msg.includes("PASSWORD_REQUIRED_FOR_NEW_USER"))
           toast.error("Password is required for new users.");
-        } else if (msg === "USER_PASSWORD_TOO_SHORT") {
-          toast.error("Password must be at least 8 characters.");
-        } else if (msg === "EMAIL_IN_USE") {
-          toast.error("This email is already in use.");
-        } else {
-          toast.error("Failed to save user. Check server logs.");
-        }
+        else toast.error("Failed to save user.");
       }
     });
   }
 
-  const handleToggleActive = React.useCallback(
-    (user: UserForClient) => {
-      if (isProtectedUser(user)) return;
-
-      startTransition(async () => {
-        try {
-          await toggleUserActiveAction({
-            userId: user.id,
-            newActive: !user.isActive,
-          });
-          toast.success("User status updated.");
-          router.refresh();
-        } catch (err) {
-          console.error("Failed to toggle user active", err);
-          toast.error("Failed to update user status.");
-        }
-      });
-    },
-    [isProtectedUser, router]
-  );
-
-  const columns = React.useMemo<ColumnDef<UserForClient>[]>(() => {
-    return [
+  // --- Table Columns (with exportValue) ---
+  const columns = React.useMemo<ColumnDef<UserForClient>[]>(
+    () => [
       {
         id: "select",
         header: ({ table }) => (
@@ -193,10 +260,7 @@ export function UsersTabClient({
                 table.getIsAllPageRowsSelected() ||
                 (table.getIsSomePageRowsSelected() && "indeterminate")
               }
-              onCheckedChange={(value) =>
-                table.toggleAllPageRowsSelected(!!value)
-              }
-              aria-label="Select all"
+              onCheckedChange={(val) => table.toggleAllPageRowsSelected(!!val)}
             />
           </div>
         ),
@@ -204,93 +268,58 @@ export function UsersTabClient({
           <div className="flex justify-center">
             <Checkbox
               checked={row.getIsSelected()}
-              onCheckedChange={(value) => row.toggleSelected(!!value)}
-              aria-label="Select row"
+              onCheckedChange={(val) => row.toggleSelected(!!val)}
             />
           </div>
         ),
-        enableSorting: false,
-        enableHiding: false,
-        meta: { exportable: false, printable: false, align: "center" },
+        meta: {
+          align: "center",
+          exportable: false,
+          printable: false,
+        },
       },
       {
-        id: "avatar",
-        header: "Avatar",
-        meta: { exportable: false, printable: false },
+        id: "name",
+        accessorFn: (row) => `${row.name} ${row.email}`,
+        header: "User",
         cell: ({ row }) => {
           const u = row.original;
-          const inits = initials(u.name, u.email);
           return (
-            <div className="flex items-center justify-start">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">
-                {inits}
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-xs font-bold text-primary ring-2 ring-background">
+                {initials(u.name, u.email)}
+              </div>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium text-foreground">
+                  {u.name || "Unknown"}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {u.email}
+                </span>
               </div>
             </div>
           );
         },
-      },
-      {
-        accessorKey: "name",
-        header: "User",
         meta: {
-          exportable: true,
-          printable: true,
-          exportValue: (u: UserForClient) => u.name || "",
+          exportValue: (u: UserForClient) =>
+            `${u.name ?? ""} ${u.email}`.trim(),
         },
-        cell: ({ row }) => {
-          const u = row.original;
-          return (
-            <div className="flex flex-col">
-              <span className="text-xs font-medium">
-                {u.name || "(No name)"}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {u.email}
-              </span>
-            </div>
-          );
-        },
-      },
-      {
-        accessorKey: "email",
-        header: "Email",
-        meta: {
-          exportable: true,
-          printable: true,
-          exportValue: (u: UserForClient) => u.email,
-        },
-        cell: ({ row }) => row.original.email,
       },
       {
         id: "role",
         header: "Role",
+        cell: ({ row }) => (
+          <Badge variant="outline" className="bg-muted/50 font-normal">
+            {getPrimaryRoleName(row.original)}
+          </Badge>
+        ),
         meta: {
-          exportable: true,
-          printable: true,
-          exportValue: (u: UserForClient) => {
-            const centralRole = u.userRoles.find(
-              (ur) => ur.role.scope === "CENTRAL" && ur.tenantId === null
-            );
-            return centralRole ? centralRole.role.name : "";
-          },
-        },
-        cell: ({ row }) => {
-          const u = row.original;
-          const centralRole = u.userRoles.find(
-            (ur) => ur.role.scope === "CENTRAL" && ur.tenantId === null
-          );
-          return centralRole ? centralRole.role.name : "—";
+          exportValue: (u: UserForClient) => getPrimaryRoleName(u),
         },
       },
       {
-        id: "active",
-        header: "Active",
-        meta: {
-          exportable: true,
-          printable: true,
-          exportValue: (u: UserForClient) =>
-            u.isActive ? "Active" : "Disabled",
-        },
+        id: "status",
+        header: "Status",
         cell: ({ row }) => {
           const u = row.original;
           const disabled = isProtectedUser(u) || isPending;
@@ -299,90 +328,130 @@ export function UsersTabClient({
               <Switch
                 checked={u.isActive}
                 disabled={disabled}
-                onCheckedChange={() => handleToggleActive(u)}
+                onCheckedChange={() =>
+                  startTransition(async () => {
+                    try {
+                      await toggleUserActiveAction({
+                        userId: u.id,
+                        newActive: !u.isActive,
+                        tenantId,
+                      });
+                      router.refresh();
+                      toast.success(
+                        `User ${!u.isActive ? "activated" : "deactivated"}`
+                      );
+                    } catch (err: any) {
+                      const msg = err.message || "";
+                      if (msg.includes("CANNOT_DEACTIVATE_SELF"))
+                        toast.error("You cannot deactivate yourself.");
+                      else toast.error("Failed to update status");
+                    }
+                  })
+                }
               />
-              <span className="text-[10px] text-muted-foreground">
-                {u.isActive ? "Active" : "Disabled"}
+              <span
+                className={`text-xs font-medium ${
+                  u.isActive ? "text-emerald-600" : "text-muted-foreground"
+                }`}
+              >
+                {u.isActive ? "Active" : "Inactive"}
               </span>
             </div>
           );
         },
+        meta: {
+          exportValue: (u: UserForClient) =>
+            u.isActive ? "Active" : "Inactive",
+        },
       },
       {
-        accessorKey: "createdAt",
-        header: "Created",
-        meta: {
-          exportable: true,
-          printable: true,
-          exportValue: (u: UserForClient) => u.createdAt,
-        },
+        id: "createdAt",
+        header: "Joined",
         cell: ({ row }) => (
-          <span className="text-[11px] text-muted-foreground">
-            {row.original.createdAt.slice(0, 10)}
+          <span className="text-xs text-muted-foreground">
+            {new Date(row.original.createdAt).toLocaleDateString()}
           </span>
         ),
+        meta: {
+          exportValue: (u: UserForClient) =>
+            new Date(u.createdAt).toLocaleDateString(),
+        },
       },
       {
         id: "actions",
-        header: () => (
-          <div className="flex justify-end pr-1 text-right">Actions</div>
-        ),
-        enableSorting: false,
-        enableHiding: false,
-        meta: { exportable: false, printable: false, align: "right" },
+        header: () => <div className="text-right">Actions</div>,
         cell: ({ row }) => {
           const u = row.original;
           const protectedUser = isProtectedUser(u);
 
           return (
-            <div className="flex justify-end gap-1">
+            <div className="flex items-center justify-end gap-1">
               <Button
-                size="xs"
-                variant="outline"
-                className="rounded-full border-muted-foreground/30 px-3 text-[10px]"
-                disabled={false}
-                onClick={() => openEdit(u)}
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-blue-500 hover:bg-blue-50 hover:text-blue-600"
+                onClick={() => openView(u)}
+                title="View Details"
               >
-                Edit
+                <Eye className="h-4 w-4" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-amber-500 hover:bg-amber-50 hover:text-amber-600"
+                onClick={() => openEdit(u)}
+                title="Edit User"
+              >
+                <Pencil className="h-4 w-4" />
               </Button>
 
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
-                    size="xs"
-                    variant="outline"
-                    className="rounded-full border-destructive/40 px-3 text-[10px] text-destructive hover:bg-destructive/10"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600"
                     disabled={protectedUser}
+                    title="Delete User"
                   >
-                    Delete
+                    {protectedUser ? (
+                      <Lock className="h-3 w-3 opacity-50" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent className="max-w-sm text-[11px]">
+                <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      Delete user &quot;{u.name || u.email}&quot;?
-                    </AlertDialogTitle>
+                    <AlertDialogTitle>Delete User?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This action cannot be undone. The user account will be
-                      permanently removed.
+                      Are you sure you want to remove <b>{u.email}</b>? This
+                      action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel className="text-[11px]">
-                      Cancel
-                    </AlertDialogCancel>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      className="bg-destructive text-[11px] hover:bg-destructive/90"
+                      className="bg-red-600 text-white hover:bg-red-700"
                       onClick={() =>
                         startTransition(async () => {
-                          if (protectedUser) return;
-                          await deleteUserAction({ userId: u.id });
-                          toast.success("User deleted.");
-                          router.refresh();
+                          try {
+                            await deleteUserAction({ userId: u.id, tenantId });
+                            router.refresh();
+                            toast.success("User deleted");
+                          } catch (err: any) {
+                            const msg = err.message || "";
+                            if (msg.includes("CANNOT_DELETE_SELF"))
+                              toast.error("Cannot delete yourself.");
+                            else if (msg.includes("CANNOT_DELETE_LAST_USER"))
+                              toast.error("Cannot delete the last admin.");
+                            else toast.error("Failed to delete user.");
+                          }
                         })
                       }
                     >
-                      Delete
+                      Delete User
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -390,147 +459,45 @@ export function UsersTabClient({
             </div>
           );
         },
+        meta: {
+          align: "right",
+          exportable: false,
+          printable: false,
+        },
       },
-    ];
-  }, [assignableRoles, handleToggleActive, isProtectedUser, isPending, router]);
+    ],
+    [isProtectedUser, isPending, router, tenantId]
+  );
 
   return (
-    <div className="space-y-3">
-      {/* Header + create button */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="space-y-4">
+      {/* --- HEADER --- */}
+      <div className="flex flex-wrap items-center justify-between gap-4 p-1">
         <div>
-          <h2 className="text-sm font-semibold">Central Users</h2>
-          <p className="text-[11px] text-muted-foreground">
-            Manage central-scope users. Superadministrator is unique and cannot
-            be reassigned from here.
+          <h2 className="text-lg font-bold tracking-tight">
+            {isTenantContext ? "Team Members" : "System Users"}
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Manage access and roles for {tenantName || "the platform"}.
           </p>
         </div>
-
-        <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-          <DialogTrigger asChild>
-            <Button
-              size="sm"
-              className="rounded-full px-3 py-1 text-[11px] font-medium"
-              onClick={openCreate}
-            >
-              + New User
-            </Button>
-          </DialogTrigger>
-
-          <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle className="text-sm">
-                {editingUser ? "Edit User" : "Create User"}
-              </DialogTitle>
-            </DialogHeader>
-
-            <form onSubmit={handleSubmit} className="space-y-3 text-[11px]">
-              {/* Name */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground">
-                  Name
-                </label>
-                <input
-                  className="w-full rounded-md border bg-background px-2 py-1 text-[11px]"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  required
-                />
-              </div>
-
-              {/* Email */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground">
-                  Email
-                </label>
-                <input
-                  type="email"
-                  className="w-full rounded-md border bg-background px-2 py-1 text-[11px]"
-                  value={formEmail}
-                  onChange={(e) => setFormEmail(e.target.value)}
-                  required
-                />
-              </div>
-
-              {/* Password */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground">
-                  {editingUser ? "Password (optional)" : "Password"}
-                </label>
-                <input
-                  type="password"
-                  className="w-full rounded-md border bg-background px-2 py-1 text-[11px]"
-                  value={formPassword}
-                  onChange={(e) => setFormPassword(e.target.value)}
-                  placeholder={
-                    editingUser ? "Leave blank to keep existing" : ""
-                  }
-                  {...(editingUser ? {} : { required: true })}
-                />
-              </div>
-
-              {/* Role dropdown */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground">
-                  Role
-                </label>
-                <select
-                  className="w-full rounded-md border bg-background px-2 py-1 text-[11px]"
-                  value={formRoleId}
-                  onChange={(e) =>
-                    setFormRoleId(Number(e.target.value) || "")
-                  }
-                  required
-                >
-                  {assignableRoles.map((role) => (
-                    <option key={role.id} value={role.id}>
-                      {role.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-[10px] text-muted-foreground">
-                  Central Superadministrator role is hidden – there is only one.
-                </p>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setOpenDialog(false)}
-                  className="text-[11px]"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  disabled={isPending}
-                  className="text-[11px]"
-                >
-                  {editingUser ? "Save Changes" : "Create User"}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button
+          onClick={openCreate}
+          className="bg-indigo-600 text-white shadow-sm hover:bg-indigo-700"
+        >
+          <PlusCircle className="mr-2 h-4 w-4" />
+          Add User
+        </Button>
       </div>
 
-      {/* Users DataTable */}
-      {users.length === 0 ? (
-        <div className="rounded-xl border border-dashed bg-muted/40 p-4 text-[11px] text-muted-foreground">
-          No central users found.
-        </div>
-      ) : (
-        <DataTable<UserForClient, unknown>
+      {/* --- TABLE --- */}
+      <div className="rounded-md border bg-card shadow-sm">
+        <DataTable
           columns={columns}
           data={users}
           searchColumnId="name"
-          searchPlaceholder="Search users..."
-          fileName="users"
-          dateFilterColumnId="createdAt"
-          onRefresh={async () => router.refresh()}
+          searchPlaceholder="Filter by name or email..."
+          onRefresh={() => router.refresh()}
           onDeleteRows={async (rows) => {
             const deletable = rows.filter((u) => !isProtectedUser(u));
             if (!deletable.length) {
@@ -538,15 +505,213 @@ export function UsersTabClient({
               return;
             }
 
+            let errors = 0;
+
             await Promise.all(
-              deletable.map((u) => deleteUserAction({ userId: u.id }))
+              deletable.map(async (u) => {
+                try {
+                  await deleteUserAction({ userId: u.id, tenantId });
+                } catch (err: any) {
+                  errors++;
+                  const msg = err?.message || "";
+                  if (msg.includes("CANNOT_DELETE_SELF")) {
+                    toast.error("Cannot delete yourself.");
+                  } else if (msg.includes("CANNOT_DELETE_LAST_USER")) {
+                    toast.error("Cannot delete the last admin.");
+                  }
+                }
+              })
             );
 
-            toast.success("Selected users deleted.");
             router.refresh();
+
+            if (errors && errors < deletable.length) {
+              toast.warning("Some users could not be deleted.");
+            } else if (errors === deletable.length) {
+              toast.error("Failed to delete selected users.");
+            } else {
+              toast.success("Selected users deleted.");
+            }
           }}
         />
-      )}
+      </div>
+
+      {/* --- CREATE / EDIT MODAL --- */}
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingUser ? "Edit User" : "Add New User"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingUser
+                ? "Update user details and role assignment."
+                : "Create a new user account for this workspace."}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Full Name</label>
+              <input
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                required
+                placeholder="e.g. John Doe"
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Email Address</label>
+              <input
+                type="email"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+                required
+                placeholder="john@example.com"
+              />
+            </div>
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">
+                  {editingUser ? "New Password (Optional)" : "Password"}
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = generateStrongPassword();
+                    setFormPassword(p);
+                    setFormConfirmPassword(p);
+                  }}
+                  className="flex items-center gap-1 text-xs text-indigo-600 hover:underline"
+                >
+                  <RefreshCw className="h-3 w-3" /> Generate
+                </button>
+              </div>
+              <input
+                type="text"
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm"
+                value={formPassword}
+                onChange={(e) => setFormPassword(e.target.value)}
+                placeholder={
+                  editingUser
+                    ? "Leave blank to keep current"
+                    : "Secure password"
+                }
+              />
+            </div>
+            {formPassword && (
+              <div className="grid gap-2">
+                <label className="text-sm font-medium">Confirm Password</label>
+                <input
+                  type="text"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 font-mono text-sm shadow-sm"
+                  value={formConfirmPassword}
+                  onChange={(e) => setFormConfirmPassword(e.target.value)}
+                />
+              </div>
+            )}
+            <div className="grid gap-2">
+              <label className="text-sm font-medium">Role Assignment</label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+                value={formRoleId}
+                onChange={(e) => setFormRoleId(Number(e.target.value))}
+                required
+              >
+                {assignableRoles.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                {editingUser ? "Save Changes" : "Create User"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* --- VIEW MODAL --- */}
+      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>User Details</DialogTitle>
+          </DialogHeader>
+          {viewUser && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-2xl font-bold text-primary">
+                  {initials(viewUser.name, viewUser.email)}
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold">{viewUser.name}</h3>
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Mail className="h-3 w-3" /> {viewUser.email}
+                  </div>
+                  <div className="mt-2">
+                    <Badge
+                      variant={viewUser.isActive ? "default" : "destructive"}
+                      className="px-2 py-0.5 text-[10px]"
+                    >
+                      {viewUser.isActive ? "Active Account" : "Access Disabled"}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="space-y-1">
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <Shield className="h-3 w-3" /> Role
+                  </span>
+                  <p className="font-medium">{getPrimaryRoleName(viewUser)}</p>
+                </div>
+                <div className="space-y-1">
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <Calendar className="h-3 w-3" /> Joined
+                  </span>
+                  <p className="font-medium">
+                    {new Date(viewUser.createdAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <span className="flex items-center gap-1 text-muted-foreground">
+                    <UserIcon className="h-3 w-3" /> User ID
+                  </span>
+                  <p
+                    className="truncate font-mono text-xs text-muted-foreground"
+                    title={viewUser.id}
+                  >
+                    {viewUser.id}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  onClick={() => setViewDialogOpen(false)}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

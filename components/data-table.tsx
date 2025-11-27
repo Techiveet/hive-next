@@ -10,6 +10,7 @@ import {
   Download,
   Printer,
   RotateCw,
+  Search,
   X,
 } from "lucide-react";
 import {
@@ -26,6 +27,14 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
+import {
+  DataTableCard,
+  DataTableCardContent,
+  DataTableCardDescription,
+  DataTableCardFooter,
+  DataTableCardHeader,
+  DataTableCardTitle,
+} from "@/components/ui/datatable-card";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -46,16 +55,17 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
-/* -------------------- Column meta augmentation (export/print) -------------------- */
+/* -------------------- Column meta augmentation -------------------- */
 declare module "@tanstack/react-table" {
   interface ColumnMeta<TData, TValue> {
-    exportable?: boolean; // default true
-    printable?: boolean; // default true
-    exportValue?: (row: TData) => unknown; // used for copy/export/print
-    align?: "left" | "center" | "right"; // header + cell alignment
+    exportable?: boolean;
+    printable?: boolean;
+    exportValue?: (row: TData) => unknown;
+    align?: "left" | "center" | "right";
   }
 }
 
@@ -69,6 +79,10 @@ export type DataTableFilter = {
 export interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data?: TData[];
+
+  // Card header
+  title?: string;
+  description?: string;
 
   // server mode
   serverMode?: boolean;
@@ -111,7 +125,7 @@ function getExportableColumns<T>(table: TanTable<T>) {
       (c) =>
         c.getIsVisible() &&
         c.columnDef?.meta?.exportable !== false &&
-        c.id !== "seq"
+        !["seq", "select", "actions"].includes(c.id)
     );
 }
 
@@ -122,12 +136,11 @@ function getPrintableColumns<T>(table: TanTable<T>) {
       (c) =>
         c.getIsVisible() &&
         c.columnDef?.meta?.printable !== false &&
-        c.id !== "seq"
+        !["seq", "select", "actions"].includes(c.id)
     );
 }
 
 function getSafeFilteredRows<T>(table: TanTable<T>) {
-  // @ts-expect-error plugin property
   const filtered = table.getFilteredRowModel?.();
   return filtered?.rows?.length ? filtered.rows : table.getRowModel().rows;
 }
@@ -252,7 +265,6 @@ async function exportXlsx<T>(
   }
 }
 
-/* ===== Simple PDF (no avatar) ===== */
 async function exportPdf<T>(
   table: TanTable<T>,
   fileName = "export",
@@ -260,8 +272,8 @@ async function exportPdf<T>(
 ) {
   try {
     const jsPDFmod = await import("jspdf");
-    const JsPDFCtor: any = (jsPDFmod as any).default || (jsPDFmod as any).jsPDF;
-
+    const JsPDFCtor: any =
+      (jsPDFmod as any).default || (jsPDFmod as any).jsPDF;
     const autoTableMod: any = await import("jspdf-autotable");
     const autoTableFn: any = autoTableMod.default || (autoTableMod as any);
 
@@ -322,14 +334,19 @@ async function exportPdf<T>(
   }
 }
 
-function printTable<T>(table: TanTable<T>, title = "Table", rows?: Row<T>[]) {
+function printTable<T>(
+  table: TanTable<T>,
+  title = "Table",
+  rows?: Row<T>[]
+) {
   const cols = getPrintableColumns(table);
   const dataRows = rows ?? getSafeFilteredRows(table);
   if (!dataRows.length) return;
 
   const thStyle =
     'style="text-align:left;padding:8px;border-bottom:1px solid #ddd"';
-  const tdStyle = 'style="padding:6px 8px;border-bottom:1px solid #f2f2f2"';
+  const tdStyle =
+    'style="padding:6px 8px;border-bottom:1px solid #f2f2f2"';
 
   const th =
     `<th ${thStyle}>No.</th>` +
@@ -345,7 +362,6 @@ function printTable<T>(table: TanTable<T>, title = "Table", rows?: Row<T>[]) {
   const trs = dataRows
     .map((r, rowIndex) => {
       const noCell = `<td ${tdStyle}>${rowIndex + 1}</td>`;
-
       const tds = cols
         .map((c) => {
           const meta = (c.columnDef.meta || {}) as any;
@@ -353,25 +369,21 @@ function printTable<T>(table: TanTable<T>, title = "Table", rows?: Row<T>[]) {
             typeof meta.exportValue === "function"
               ? meta.exportValue(r.original)
               : r.getValue<any>(c.id);
-
           const s =
             raw == null
               ? ""
               : typeof raw === "object"
               ? JSON.stringify(raw)
               : String(raw);
-
           return `<td ${tdStyle}>${s}</td>`;
         })
         .join("");
-
       return `<tr>${noCell}${tds}</tr>`;
     })
     .join("");
 
   const w = window.open("", "_blank");
   if (!w) return;
-
   w.document.write(`
     <html>
       <head><title>${title}</title></head>
@@ -394,10 +406,8 @@ function printTable<T>(table: TanTable<T>, title = "Table", rows?: Row<T>[]) {
 function buildPageItems(current: number, totalPages: number, windowSize = 2) {
   const pages: (number | string)[] = [];
   if (totalPages <= 1) return [1];
-
   const start = Math.max(1, current - windowSize);
   const end = Math.min(totalPages, current + windowSize);
-
   pages.push(1);
   if (start > 2) pages.push("…");
   for (let p = start; p <= end; p++)
@@ -431,6 +441,8 @@ function scrollIntoViewIfNeeded(selector?: string | false) {
 export function DataTable<TData, TValue>({
   columns,
   data = [],
+  title,
+  description,
   serverMode = false,
   totalEntries = 0,
   onQueryChange,
@@ -468,7 +480,6 @@ export function DataTable<TData, TValue>({
   // date range filter (client-side)
   const dateFilteredData = React.useMemo(() => {
     if (!dateFilterColumnId || (!dateFrom && !dateTo)) return data;
-
     const fromTs = dateFrom ? new Date(dateFrom).getTime() : null;
     const toTsRaw = dateTo ? new Date(dateTo).getTime() : null;
     const toTs = toTsRaw != null ? toTsRaw + 24 * 60 * 60 * 1000 - 1 : null;
@@ -478,7 +489,6 @@ export function DataTable<TData, TValue>({
     return data.filter((row: any) => {
       const raw = row?.[dateFilterColumnId as keyof typeof row] as any;
       if (!raw) return false;
-
       const d =
         raw instanceof Date
           ? raw
@@ -486,13 +496,10 @@ export function DataTable<TData, TValue>({
           ? new Date(raw)
           : null;
       if (!d) return false;
-
       const t = d.getTime();
       if (Number.isNaN(t)) return false;
-
       if (fromTs && t < fromTs) return false;
       if (toTs && t > toTs) return false;
-
       return true;
     });
   }, [data, dateFilterColumnId, dateFrom, dateTo]);
@@ -567,20 +574,17 @@ export function DataTable<TData, TValue>({
     },
     onColumnVisibilityChange: setColumnVisibility,
     onRowSelectionChange: setRowSelection,
-
     getCoreRowModel: coreRow,
     getFilteredRowModel: filteredRow,
     ...(sortedRow ? { getSortedRowModel: sortedRow } : {}),
     ...(pagedRow ? { getPaginationRowModel: pagedRow } : {}),
-
     manualSorting: manual,
     manualPagination: manual,
     manualFiltering: false,
-
     initialState: !manual ? { pagination: { pageSize } } : undefined,
   });
 
-  /* ---------- auto-select filtered rows when filters/search/date active ---------- */
+  // auto select filtered rows when filters/search/date active
   React.useEffect(() => {
     const hasColFilters = columnFilters.length > 0;
     const hasSearch = !!(
@@ -595,7 +599,6 @@ export function DataTable<TData, TValue>({
       table.resetRowSelection();
       return;
     }
-
     table.resetRowSelection();
     const rows = getSafeFilteredRows(table);
     rows.forEach((r) => r.toggleSelected(true));
@@ -633,7 +636,6 @@ export function DataTable<TData, TValue>({
   const selectedRows = table.getSelectedRowModel().rows ?? [];
   const selectedCount = selectedRows.length;
   const hasSelection = selectedCount > 0;
-
   const canDelete = !!onDeleteRows && hasSelection;
   const refreshFn = onRefresh ?? onReload;
 
@@ -643,25 +645,16 @@ export function DataTable<TData, TValue>({
     setDateTo("");
     setSorting([]);
     table.resetRowSelection();
-
     if (searchColumnId) {
-      if (manual) {
-        setSearchValue("");
-      } else {
-        table.getColumn(searchColumnId)?.setFilterValue("");
-      }
+      if (manual) setSearchValue("");
+      else table.getColumn(searchColumnId)?.setFilterValue("");
     }
-
-    if (manual) {
-      setPageIndexState(0);
-    } else {
-      table.setPageIndex(0);
-    }
+    if (manual) setPageIndexState(0);
+    else table.setPageIndex(0);
   }
 
   async function handleRefresh() {
     resetFiltersAndState();
-
     if (!refreshFn) return;
     try {
       setRefreshing(true);
@@ -697,9 +690,7 @@ export function DataTable<TData, TValue>({
   const endEntry = total === 0 ? 0 : Math.min((page + 1) * ps, total);
   const canPrev = manual ? page > 0 : table.getCanPreviousPage();
   const canNext = manual ? page + 1 < pageCount : table.getCanNextPage();
-
   const showDateFilter = !!dateFilterColumnId;
-
   const anyFilterOrSearch =
     columnFilters.length > 0 ||
     !!dateFrom ||
@@ -708,9 +699,7 @@ export function DataTable<TData, TValue>({
       (manual
         ? !!searchValue
         : (table.getColumn(searchColumnId)?.getFilterValue() as string)));
-
   const isOverlayActive = refreshing || busy;
-
   const currentSearchVal =
     searchColumnId &&
     (!manual
@@ -729,464 +718,373 @@ export function DataTable<TData, TValue>({
   };
 
   return (
-    <div className={cn("space-y-4", className)}>
-      {/* Top controls */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Show</span>
-          <select
-            className="h-9 rounded-md border px-2 text-sm"
-            value={
-              manual ? pageSizeState : table.getState().pagination.pageSize
-            }
-            onChange={(e) => {
-              const val = Number(e.target.value);
-              if (manual) {
-                setPageSizeState(val);
-                setPageIndexState(0);
-              } else {
-                table.setPageSize(val);
-              }
-            }}
-          >
-            {pageSizeOptions.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-          <span className="text-sm text-muted-foreground">entries</span>
-        </div>
-
-        {/* Faceted filters */}
-        {filters?.length ? (
-          <div className="flex flex-wrap items-center gap-2">
-            {filters.map((filter) => {
-              const col = table.getColumn(filter.columnId);
-              const current = (col?.getFilterValue() as string) ?? "";
-              return (
-                <DropdownMenu key={filter.columnId}>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="gap-2 rounded-full"
-                    >
-                      <span>{filter.title}</span>
-                      {current && (
-                        <span className="text-xs text-muted-foreground">
-                          ·{" "}
-                          {
-                            filter.options.find((o) => o.value === current)
-                              ?.label
-                          }
-                        </span>
-                      )}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
-                    <DropdownMenuLabel>{filter.title}</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuCheckboxItem
-                      checked={!current}
-                      onCheckedChange={() => col?.setFilterValue(undefined)}
-                    >
-                      All
-                    </DropdownMenuCheckboxItem>
-                    {filter.options.map((opt) => (
-                      <DropdownMenuCheckboxItem
-                        key={opt.value}
-                        checked={current === opt.value}
-                        onCheckedChange={() => col?.setFilterValue(opt.value)}
-                      >
-                        {opt.label}
-                      </DropdownMenuCheckboxItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              );
-            })}
-          </div>
-        ) : null}
-
-        {/* Date range filter */}
-        {showDateFilter && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Date</span>
-            <Input
-              type="date"
-              className="h-9 w-[150px]"
-              value={dateFrom}
-              onChange={(e) => {
-                setDateFrom(e.target.value);
-                if (!e.target.value && !dateTo) {
-                  table.setPageIndex(0);
-                }
-              }}
-            />
-            <span className="text-xs text-muted-foreground">to</span>
-            <Input
-              type="date"
-              className="h-9 w-[150px]"
-              value={dateTo}
-              onChange={(e) => {
-                setDateTo(e.target.value);
-                if (!dateFrom && !e.target.value) {
-                  table.setPageIndex(0);
-                }
-              }}
-            />
-          </div>
-        )}
-
-        <div className="flex-1" />
-
-        {searchColumnId && (
-          <div className="relative w-[260px]">
-            <Input
-              placeholder={searchPlaceholder}
-              value={currentSearchVal ?? ""}
-              onChange={(e) => {
-                if (manual) {
-                  setSearchValue(e.target.value);
-                  setPageIndexState(0);
-                } else {
-                  table
-                    .getColumn(searchColumnId)
-                    ?.setFilterValue(e.target.value);
-                  table.setPageIndex(0);
-                }
-              }}
-              className="h-9 pr-8 w-full"
-            />
-            {currentSearchVal && (
-              <button
-                type="button"
-                className="absolute inset-y-0 right-2 flex items-center text-muted-foreground hover:text-foreground"
-                onClick={clearSearch}
-              >
-                <X className="h-3 w-3" />
-              </button>
+    <div className={cn("w-full space-y-4", className)}>
+      <DataTableCard>
+        {/* Optional Header */}
+        {(title || description) && (
+          <DataTableCardHeader>
+            {title && <DataTableCardTitle>{title}</DataTableCardTitle>}
+            {description && (
+              <DataTableCardDescription>
+                {description}
+              </DataTableCardDescription>
             )}
-          </div>
-        )}
-      </div>
-
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex-1" />
-
-        {anyFilterOrSearch && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="ml-1"
-            onClick={resetFilters}
-            title="Reset filters"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          </DataTableCardHeader>
         )}
 
-        <Button
-          variant="default"
-          size="icon"
-          onClick={handleRefresh}
-          title="Refresh"
-          className="h-9 w-9"
-          disabled={refreshing || !refreshFn}
-        >
-          <RotateCw
-            className={cn("h-4 w-4", (refreshing || busy) && "animate-spin")}
-          />
-        </Button>
+        {/* Toolbar */}
+        <div className="flex flex-col gap-4 bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+          {/* Left: search + filters */}
+          <div className="flex flex-1 flex-wrap items-center gap-3">
+            {/* Search */}
+            {searchColumnId && (
+              <div className="relative w-full sm:w-[260px]">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={searchPlaceholder}
+                  value={currentSearchVal ?? ""}
+                  onChange={(e) => {
+                    if (manual) {
+                      setSearchValue(e.target.value);
+                      setPageIndexState(0);
+                    } else {
+                      table
+                        .getColumn(searchColumnId)
+                        ?.setFilterValue(e.target.value);
+                      table.setPageIndex(0);
+                    }
+                  }}
+                  className="h-9 w-full pl-9"
+                />
+                {currentSearchVal && (
+                  <button
+                    type="button"
+                    className="absolute inset-y-0 right-2 flex items-center text-muted-foreground hover:text-foreground"
+                    onClick={clearSearch}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+            )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="h-9 gap-2">
-              <ColumnsIcon className="h-4 w-4" />
-              Columns
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {table
-              .getAllLeafColumns()
-              .filter((c) => c.getCanHide())
-              .map((c) => (
-                <DropdownMenuCheckboxItem
-                  key={c.id}
-                  checked={c.getIsVisible()}
-                  onCheckedChange={(v) => c.toggleVisibility(!!v)}
-                >
-                  {typeof c.columnDef.header === "string"
-                    ? c.columnDef.header
-                    : c.id}
-                </DropdownMenuCheckboxItem>
-              ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+            {/* Date filter */}
+            {showDateFilter && (
+              <div className="flex items-center gap-2">
+                <Input
+                  type="date"
+                  className="h-9 w-[130px]"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value);
+                    if (!e.target.value && !dateTo) table.setPageIndex(0);
+                  }}
+                />
+                <span className="text-xs text-muted-foreground">-</span>
+                <Input
+                  type="date"
+                  className="h-9 w-[130px]"
+                  value={dateTo}
+                  onChange={(e) => {
+                    setDateTo(e.target.value);
+                    if (!dateFrom && !e.target.value) table.setPageIndex(0);
+                  }}
+                />
+              </div>
+            )}
 
-        {/* ALL filtered rows */}
-        <Button
-          variant="outline"
-          className="h-9 gap-2"
-          onClick={() => withBusy(() => copyCsv(table))}
-        >
-          <Copy className="h-4 w-4" />
-          Copy
-        </Button>
+            {/* Faceted filters */}
+            {filters?.length ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Separator
+                  orientation="vertical"
+                  className="hidden h-6 sm:block"
+                />
+                {filters.map((filter) => {
+                  const col = table.getColumn(filter.columnId);
+                  const current = (col?.getFilterValue() as string) ?? "";
+                  return (
+                    <DropdownMenu key={filter.columnId}>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-9 gap-2 rounded-full border-dashed"
+                        >
+                          <span className="font-normal">{filter.title}</span>
+                          {current && (
+                            <span className="ml-1 rounded-sm bg-primary/10 px-1 py-0.5 text-xs font-normal text-primary">
+                              {
+                                filter.options.find(
+                                  (o) => o.value === current
+                                )?.label
+                              }
+                            </span>
+                          )}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start">
+                        <DropdownMenuLabel>{filter.title}</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuCheckboxItem
+                          checked={!current}
+                          onCheckedChange={() =>
+                            col?.setFilterValue(undefined)
+                          }
+                        >
+                          All
+                        </DropdownMenuCheckboxItem>
+                        {filter.options.map((opt) => (
+                          <DropdownMenuCheckboxItem
+                            key={opt.value}
+                            checked={current === opt.value}
+                            onCheckedChange={() =>
+                              col?.setFilterValue(opt.value)
+                            }
+                          >
+                            {opt.label}
+                          </DropdownMenuCheckboxItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  );
+                })}
+              </div>
+            ) : null}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="h-9 gap-2">
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              onClick={() => withBusy(() => downloadCsv(table, fileName))}
-            >
-              CSV
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => withBusy(() => exportXlsx(table, fileName))}
-            >
-              XLSX
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() => withBusy(() => exportPdf(table, fileName))}
-            >
-              PDF
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
-        <Button
-          variant="outline"
-          className="h-9 gap-2"
-          onClick={() => withBusy(() => printTable(table, fileName))}
-        >
-          <Printer className="h-4 w-4" />
-          Print
-        </Button>
-
-        {/* Selected rows export/copy/print */}
-        {hasSelection && (
-          <div className="flex flex-wrap items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs">
-            <span className="font-semibold text-emerald-700">
-              {selectedCount} selected
-            </span>
-
-            {onDeleteRows && (
+            {/* Reset filters */}
+            {anyFilterOrSearch && (
               <Button
-                size="sm"
-                className="h-8 border-0 bg-red-600 text-xs text-white hover:bg-red-700"
-                onClick={handleMultiDelete}
-                disabled={!canDelete}
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9"
+                onClick={resetFilters}
+                title="Reset filters"
               >
-                <X className="mr-1 h-3 w-3" />
-                Delete selected
+                <X className="h-4 w-4" />
               </Button>
             )}
+          </div>
 
+          {/* Right: actions */}
+          <div className="flex items-center gap-2">
             <Button
-              size="sm"
-              className="h-8 border-0 bg-emerald-600 text-xs text-white hover:bg-emerald-700"
-              onClick={() => withBusy(() => copyCsv(table, selectedRows))}
+              variant="outline"
+              size="icon"
+              onClick={handleRefresh}
+              title="Refresh"
+              className="h-9 w-9"
+              disabled={refreshing || !refreshFn}
             >
-              <Copy className="mr-1 h-3 w-3" />
-              Copy selected
+              <RotateCw
+                className={cn(
+                  "h-4 w-4",
+                  (refreshing || busy) && "animate-spin"
+                )}
+              />
             </Button>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button
-                  size="sm"
-                  className="h-8 border-0 bg-emerald-500 text-xs text-white hover:bg-emerald-600"
-                >
-                  <Download className="mr-1 h-3 w-3" />
-                  Export selected
+                <Button variant="outline" className="h-9 gap-2">
+                  <ColumnsIcon className="h-4 w-4" />
+                  <span className="hidden sm:inline">Columns</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {table
+                  .getAllLeafColumns()
+                  .filter((c) => c.getCanHide())
+                  .map((c) => (
+                    <DropdownMenuCheckboxItem
+                      key={c.id}
+                      checked={c.getIsVisible()}
+                      onCheckedChange={(v) => c.toggleVisibility(!!v)}
+                    >
+                      {typeof c.columnDef.header === "string"
+                        ? c.columnDef.header
+                        : c.id}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* GLOBAL COPY (all filtered rows) */}
+            <Button
+              variant="outline"
+              className="h-9 gap-2"
+              onClick={() => withBusy(() => copyCsv(table))}
+            >
+              <Copy className="h-4 w-4" />
+              <span className="hidden sm:inline">Copy</span>
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="secondary" className="h-9 gap-2 shadow-sm">
+                  <Download className="h-4 w-4" />
+                  <span className="hidden sm:inline">Export</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={() =>
-                    withBusy(() =>
-                      downloadCsv(table, fileName, selectedRows)
-                    )
-                  }
+                  onClick={() => withBusy(() => downloadCsv(table, fileName))}
                 >
                   CSV
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() =>
-                    withBusy(() => exportXlsx(table, fileName, selectedRows))
-                  }
+                  onClick={() => withBusy(() => exportXlsx(table, fileName))}
                 >
                   XLSX
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() =>
-                    withBusy(() => exportPdf(table, fileName, selectedRows))
-                  }
+                  onClick={() => withBusy(() => exportPdf(table, fileName))}
                 >
                   PDF
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-
-            <Button
-              size="sm"
-              className="h-8 border-0 bg-emerald-700 text-xs text-white hover:bg-emerald-800"
-              onClick={() =>
-                withBusy(() => printTable(table, fileName, selectedRows))
-              }
-            >
-              <Printer className="mr-1 h-3 w-3" />
-              Print selected
-            </Button>
           </div>
-        )}
-      </div>
-
-      {/* Table + overlay */}
-      <div className="relative rounded-md border">
-        {isOverlayActive && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/5 dark:bg-black/30 backdrop-blur-sm">
-            <RotateCw className="h-6 w-6 animate-spin" />
-          </div>
-        )}
-
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((hg) => (
-              <TableRow key={hg.id}>
-                {hg.headers.map((h) => (
-                  <TableHead
-                    key={h.id}
-                    className={cn(
-                      h.column.getCanSort() && "cursor-pointer select-none",
-                      (h.column.columnDef.meta as any)?.align === "right" &&
-                        "text-right",
-                      (h.column.columnDef.meta as any)?.align === "center" &&
-                        "text-center"
-                    )}
-                    onClick={
-                      h.column.getCanSort()
-                        ? h.column.getToggleSortingHandler()
-                        : undefined
-                    }
-                  >
-                    {h.isPlaceholder
-                      ? null
-                      : flexRender(
-                          h.column.columnDef.header,
-                          h.getContext()
-                        )}
-                    {(
-                      {
-                        asc: " ▲",
-                        desc: " ▼",
-                      } as Record<string, string>
-                    )[h.column.getIsSorted() as string] ?? null}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell
-                      key={cell.id}
-                      className={cn(
-                        (cell.column.columnDef.meta as any)?.align ===
-                          "right" && "text-right",
-                        (cell.column.columnDef.meta as any)?.align ===
-                          "center" && "text-center"
-                      )}
-                    >
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={table.getAllLeafColumns().length || 1}
-                  className="h-24 text-center text-sm text-muted-foreground"
-                >
-                  No results.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between gap-2">
-        {/* Mobile */}
-        <div className="flex w-full items-center justify-between sm:hidden">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9"
-            onClick={() => {
-              if (manual) setPageIndexState((p) => Math.max(0, p - 1));
-              else table.previousPage();
-              scrollIntoViewIfNeeded(scrollTo);
-            }}
-            disabled={!canPrev}
-          >
-            Previous
-          </Button>
-
-          <div className="text-sm text-muted-foreground">
-            Showing {startEntry} to {endEntry} of {total} results
-          </div>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-9"
-            onClick={() => {
-              if (manual) setPageIndexState((p) => p + 1);
-              else table.nextPage();
-              scrollIntoViewIfNeeded(scrollTo);
-            }}
-            disabled={!canNext}
-          >
-            Next
-          </Button>
         </div>
 
-        {/* Desktop */}
-        <div className="hidden w-full items-center justify-between sm:flex">
-          <div className="text-sm text-muted-foreground">
-            Showing <span className="font-semibold">{startEntry}</span> to{" "}
-            <span className="font-semibold">{endEntry}</span> of{" "}
-            <span className="font-semibold">{total}</span> results
+        {/* Content */}
+        <DataTableCardContent className="relative border-t">
+          {isOverlayActive && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/50 backdrop-blur-[1px]">
+              <RotateCw className="h-6 w-6 animate-spin text-primary" />
+            </div>
+          )}
+
+          <Table>
+            <TableHeader className="bg-muted/30">
+              {table.getHeaderGroups().map((hg) => (
+                <TableRow
+                  key={hg.id}
+                  className="border-b hover:bg-transparent"
+                >
+                  {hg.headers.map((h) => (
+                    <TableHead
+                      key={h.id}
+                      className={cn(
+                        "h-10 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground",
+                        h.column.getCanSort() &&
+                          "cursor-pointer select-none hover:text-foreground",
+                        (h.column.columnDef.meta as any)?.align === "right" &&
+                          "text-right",
+                        (h.column.columnDef.meta as any)?.align === "center" &&
+                          "text-center"
+                      )}
+                      onClick={
+                        h.column.getCanSort()
+                          ? h.column.getToggleSortingHandler()
+                          : undefined
+                      }
+                    >
+                      <div
+                        className={cn(
+                          "flex items-center gap-2",
+                          (h.column.columnDef.meta as any)?.align === "right" &&
+                            "justify-end",
+                          (h.column.columnDef.meta as any)?.align ===
+                            "center" && "justify-center"
+                        )}
+                      >
+                        {h.isPlaceholder
+                          ? null
+                          : flexRender(
+                              h.column.columnDef.header,
+                              h.getContext()
+                            )}
+                        {h.column.getIsSorted() === "asc"
+                          ? " ▲"
+                          : h.column.getIsSorted() === "desc"
+                          ? " ▼"
+                          : null}
+                      </div>
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {table.getRowModel().rows.length ? (
+                table.getRowModel().rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() && "selected"}
+                    className="group transition-colors hover:bg-muted/20 data-[state=selected]:bg-muted/50"
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell
+                        key={cell.id}
+                        className={cn(
+                          "px-4 py-3 align-middle text-sm",
+                          (cell.column.columnDef.meta as any)?.align ===
+                            "right" && "text-right",
+                          (cell.column.columnDef.meta as any)?.align ===
+                            "center" && "text-center"
+                        )}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell
+                    colSpan={table.getAllLeafColumns().length || 1}
+                    className="h-32 text-center text-sm text-muted-foreground"
+                  >
+                    No results found.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </DataTableCardContent>
+
+        {/* Footer / pagination */}
+        <DataTableCardFooter className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Rows</span>
+            <select
+              className="h-8 w-16 rounded-md border border-input bg-background px-2 text-xs font-medium"
+              value={
+                manual ? pageSizeState : table.getState().pagination.pageSize
+              }
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                if (manual) {
+                  setPageSizeState(val);
+                  setPageIndexState(0);
+                } else {
+                  table.setPageSize(val);
+                }
+              }}
+            >
+              {pageSizeOptions.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <span className="ml-2 hidden text-sm text-muted-foreground sm:inline">
+              Showing <strong>{startEntry}</strong>-<strong>{endEntry}</strong>{" "}
+              of <strong>{total}</strong>
+            </span>
           </div>
 
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9"
-              aria-label="Previous"
+              className="h-8 w-8"
               onClick={() => {
                 if (manual) setPageIndexState((p) => Math.max(0, p - 1));
                 else table.previousPage();
@@ -1196,33 +1094,27 @@ export function DataTable<TData, TValue>({
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-
-            {buildPageItems(page + 1, pageCount, 2).map((item, idx) => {
-              if (item === "…") {
+            {buildPageItems(page + 1, pageCount, 1).map((item, idx) => {
+              if (item === "…")
                 return (
-                  <Button
+                  <span
                     key={`dots-${idx}`}
-                    variant="outline"
-                    size="icon"
-                    className="h-9 min-w-[72px] rounded-full px-4 inline-flex items-center justify-center text-sm cursor-default"
-                    disabled
+                    className="px-2 text-xs text-muted-foreground"
                   >
-                    …
-                  </Button>
+                    ...
+                  </span>
                 );
-              }
               const pNum = item as number;
               const isActive = pNum === page + 1;
               return (
                 <Button
                   key={`p-${pNum}`}
                   variant={isActive ? "default" : "outline"}
-                  size="icon"
+                  size="sm"
                   className={cn(
-                    "h-9 min-w-[72px] rounded-full px-4",
-                    "inline-flex items-center justify-center text-sm"
+                    "h-8 w-8 p-0 text-xs",
+                    isActive && "pointer-events-none"
                   )}
-                  aria-current={isActive ? "page" : undefined}
                   onClick={() => {
                     if (manual) setPageIndexState(pNum - 1);
                     else table.setPageIndex(pNum - 1);
@@ -1233,12 +1125,10 @@ export function DataTable<TData, TValue>({
                 </Button>
               );
             })}
-
             <Button
               variant="outline"
               size="icon"
-              className="h-9 w-9"
-              aria-label="Next"
+              className="h-8 w-8"
               onClick={() => {
                 if (manual) setPageIndexState((p) => p + 1);
                 else table.nextPage();
@@ -1249,8 +1139,115 @@ export function DataTable<TData, TValue>({
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
+        </DataTableCardFooter>
+      </DataTableCard>
+
+      {/* Floating selection bar (Copy / Export / Print / Delete) */}
+      {hasSelection && (
+        <div className="fixed bottom-8 left-1/2 z-50 -translate-x-1/2 animate-in slide-in-from-bottom-5 fade-in duration-300">
+          <div className="flex items-center gap-2 rounded-full border border-zinc-200 bg-zinc-900 p-2 pl-4 text-zinc-50 shadow-2xl dark:border-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">
+            <div className="flex items-center gap-2 border-r border-white/20 pr-3 dark:border-black/20">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                {selectedCount}
+              </span>
+              <span className="text-sm font-medium">Selected</span>
+            </div>
+
+            <div className="flex items-center gap-1">
+              {/* Copy selected */}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 rounded-full px-3 text-white hover:bg-white/20 dark:text-black dark:hover:bg-black/10"
+                onClick={() => withBusy(() => copyCsv(table, selectedRows))}
+              >
+                <Copy className="mr-2 h-3.5 w-3.5" />
+                Copy
+              </Button>
+
+              {/* Export selected: CSV/XLSX/PDF */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 rounded-full px-3 text-white hover:bg-white/20 dark:text-black dark:hover:bg-black/10"
+                  >
+                    <Download className="mr-2 h-3.5 w-3.5" />
+                    Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="center">
+                  <DropdownMenuItem
+                    onClick={() =>
+                      withBusy(() =>
+                        downloadCsv(table, fileName, selectedRows)
+                      )
+                    }
+                  >
+                    CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      withBusy(() =>
+                        exportXlsx(table, fileName, selectedRows)
+                      )
+                    }
+                  >
+                    XLSX
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() =>
+                      withBusy(() =>
+                        exportPdf(table, fileName, selectedRows)
+                      )
+                    }
+                  >
+                    PDF
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Print selected */}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 rounded-full px-3 text-white hover:bg-white/20 dark:text-black dark:hover:bg-black/10"
+                onClick={() =>
+                  withBusy(() => printTable(table, fileName, selectedRows))
+                }
+              >
+                <Printer className="mr-2 h-3.5 w-3.5" />
+                Print
+              </Button>
+
+              {/* Delete selected */}
+              {onDeleteRows && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 rounded-full px-3 text-red-400 hover:bg-red-900/30 hover:text-red-300"
+                  onClick={handleMultiDelete}
+                  disabled={busy}
+                >
+                  <X className="mr-2 h-3.5 w-3.5" />
+                  Delete
+                </Button>
+              )}
+            </div>
+
+            {/* Clear selection */}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 rounded-full text-zinc-400 hover:bg-white/20 hover:text-white dark:hover:bg-black/10 dark:hover:text-black"
+              onClick={() => table.resetRowSelection()}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

@@ -7,7 +7,6 @@ import { syncCentralSuperAdminPermissions } from "../lib/rbac";
 
 const prisma = new PrismaClient();
 
-// simple ANSI colors for nicer terminal output
 const COLORS = {
   reset: "\x1b[0m",
   bold: "\x1b[1m",
@@ -30,9 +29,6 @@ function section(title: string) {
   console.log(`\n${COLORS.magenta}${COLORS.bold}› ${title}${COLORS.reset}`);
 }
 
-/**
- * Create a user via your auth system if it does not exist yet.
- */
 async function ensureUser(opts: {
   name: string;
   email: string;
@@ -41,7 +37,6 @@ async function ensureUser(opts: {
   const existing = await prisma.user.findUnique({
     where: { email: opts.email },
   });
-
   if (existing) return existing;
 
   await auth.api.signUpEmail({
@@ -55,11 +50,9 @@ async function ensureUser(opts: {
   const created = await prisma.user.findUnique({
     where: { email: opts.email },
   });
-
   if (!created) {
     throw new Error(`Failed to create user ${opts.email}`);
   }
-
   return created;
 }
 
@@ -89,12 +82,8 @@ async function ensureUserRole(opts: {
 }) {
   const { userId, roleId, tenantId = null } = opts;
 
-  // For a given roleId + tenantId, ensure only one user has it:
   await prisma.userRole.deleteMany({
-    where: {
-      roleId,
-      tenantId,
-    },
+    where: { roleId, tenantId },
   });
 
   await prisma.userRole.create({
@@ -106,81 +95,10 @@ async function ensureUserRole(opts: {
   });
 }
 
-// Helper for a global (tenantId = null) role
-async function upsertGlobalRole(opts: {
-  key: string;
-  name: string;
-  scope: RoleScope;
-}) {
-  const existing = await prisma.role.findFirst({
-    where: {
-      key: opts.key,
-      tenantId: null,
-    },
-  });
-
-  if (existing) {
-    return prisma.role.update({
-      where: { id: existing.id },
-      data: {
-        name: opts.name,
-        scope: opts.scope,
-        tenantId: null,
-      },
-    });
-  }
-
-  return prisma.role.create({
-    data: {
-      key: opts.key,
-      name: opts.name,
-      scope: opts.scope,
-      tenantId: null,
-    },
-  });
-}
-
-// Helper for a tenant-local role
-async function upsertTenantRole(opts: {
-  tenantId: string;
-  key: string;
-  name: string;
-  scope: RoleScope;
-}) {
-  const existing = await prisma.role.findFirst({
-    where: {
-      tenantId: opts.tenantId,
-      key: opts.key,
-    },
-  });
-
-  if (existing) {
-    return prisma.role.update({
-      where: { id: existing.id },
-      data: {
-        name: opts.name,
-        scope: opts.scope,
-        tenantId: opts.tenantId,
-      },
-    });
-  }
-
-  return prisma.role.create({
-    data: {
-      key: opts.key,
-      name: opts.name,
-      scope: opts.scope,
-      tenantId: opts.tenantId,
-    },
-  });
-}
-
 async function main() {
   banner("Hive Seed – Roles, Permissions, Tenants & Superadmins");
 
-  //
-  // 1) PERMISSIONS (global, shared by central + tenants)
-  //
+  // 1) PERMISSIONS – GLOBAL (tenantId = null)
   section("Seeding permissions");
 
   const permissionsData = [
@@ -190,14 +108,13 @@ async function main() {
     { key: "manage_billing", name: "Manage Billing & Subscriptions" },
     { key: "view_audit_logs", name: "View Audit Logs" },
 
-    // file manager / security related
+    // file manager / security
     { key: "manage_files", name: "Manage Files & Folders" },
     { key: "manage_storage_settings", name: "Manage Storage Settings" },
     { key: "view_security", name: "View Security Area" },
     { key: "manage_security", name: "Manage Security (Users/Roles)" },
   ];
 
-  // global permissions (tenantId = null)
   await prisma.permission.createMany({
     data: permissionsData.map((p) => ({
       key: p.key,
@@ -226,9 +143,7 @@ async function main() {
       .filter(Boolean) as { roleId: number; permissionId: number }[];
   }
 
-  //
   // 2) TENANTS
-  //
   section("Seeding tenants");
 
   const tenantsData = [
@@ -251,24 +166,159 @@ async function main() {
     `${COLORS.green}  ✔ ${tenants.length} tenants seeded${COLORS.reset}`
   );
 
-  //
-  // 3) TENANT DOMAINS
-  //
+  const centralHiveTenant = tenants.find((t) => t.slug === "central-hive")!;
+  const acmeTenant = tenants.find((t) => t.slug === "acme-corp")!;
+  const betaTenant = tenants.find((t) => t.slug === "beta-labs")!;
+
+  // 3) CENTRAL ROLE (GLOBAL)
+  section("Seeding central role");
+
+  const centralSuperAdmin = await prisma.role.upsert({
+    where: {
+      tenantId_key: {
+        tenantId: null,
+        key: "central_superadmin",
+      },
+    },
+    update: {
+      name: "Central Super Administrator",
+      scope: RoleScope.CENTRAL,
+      tenantId: null,
+    },
+    create: {
+      key: "central_superadmin",
+      name: "Central Super Administrator",
+      scope: RoleScope.CENTRAL,
+      tenantId: null,
+    },
+  });
+
+  // 4) TENANT ROLES (PER TENANT – tenantId is SET)
+  section("Seeding tenant roles");
+
+  type TenantRoleIds = {
+    superadminId: number;
+    adminId: number;
+    memberId: number;
+  };
+
+  const tenantRolesByTenantId: Record<string, TenantRoleIds> = {};
+
+  for (const tenant of tenants) {
+    const superadmin = await prisma.role.upsert({
+      where: {
+        tenantId_key: {
+          tenantId: tenant.id,
+          key: "tenant_superadmin",
+        },
+      },
+      update: {
+        name: "Tenant Super Administrator",
+        scope: RoleScope.TENANT,
+      },
+      create: {
+        key: "tenant_superadmin",
+        name: "Tenant Super Administrator",
+        scope: RoleScope.TENANT,
+        tenantId: tenant.id,
+      },
+    });
+
+    const admin = await prisma.role.upsert({
+      where: {
+        tenantId_key: {
+          tenantId: tenant.id,
+          key: "tenant_admin",
+        },
+      },
+      update: {
+        name: "Tenant Administrator",
+        scope: RoleScope.TENANT,
+      },
+      create: {
+        key: "tenant_admin",
+        name: "Tenant Administrator",
+        scope: RoleScope.TENANT,
+        tenantId: tenant.id,
+      },
+    });
+
+    const member = await prisma.role.upsert({
+      where: {
+        tenantId_key: {
+          tenantId: tenant.id,
+          key: "tenant_member",
+        },
+      },
+      update: {
+        name: "Tenant Member",
+        scope: RoleScope.TENANT,
+      },
+      create: {
+        key: "tenant_member",
+        name: "Tenant Member",
+        scope: RoleScope.TENANT,
+        tenantId: tenant.id,
+      },
+    });
+
+    tenantRolesByTenantId[tenant.id] = {
+      superadminId: superadmin.id,
+      adminId: admin.id,
+      memberId: member.id,
+    };
+  }
+
+  // 5) ROLE PERMISSIONS (CENTRAL + TENANT)
+  section("Seeding role permissions");
+
+  const allPermKeys = permissions.map((p) => p.key);
+  const tenantPermKeys = allPermKeys.filter((k) => k !== "manage_tenants");
+
+  const allRoleIds = [
+    centralSuperAdmin.id,
+    ...Object.values(tenantRolesByTenantId).flatMap((r) => [
+      r.superadminId,
+      r.adminId,
+      r.memberId,
+    ]),
+  ];
+
+  await prisma.rolePermission.deleteMany({
+    where: { roleId: { in: allRoleIds } },
+  });
+
+  const rolePermissionsData = [
+    // CENTRAL SUPERADMIN → all permissions
+    ...rolePerms(centralSuperAdmin.id, allPermKeys),
+
+    // per-tenant roles
+    ...Object.values(tenantRolesByTenantId).flatMap((r) => [
+      // tenant superadmin → all except manage_tenants
+      ...rolePerms(r.superadminId, tenantPermKeys),
+      // tenant admin → same as superadmin for now
+      ...rolePerms(r.adminId, tenantPermKeys),
+      // tenant member → files only
+      ...rolePerms(r.memberId, ["manage_files"]),
+    ]),
+  ];
+
+  await prisma.rolePermission.createMany({
+    data: rolePermissionsData,
+    skipDuplicates: true,
+  });
+
+  console.log(
+    `${COLORS.green}  ✔ central + tenant roles seeded with permissions${COLORS.reset}`
+  );
+
+  // 6) TENANT DOMAINS
   section("Seeding tenant domains");
 
   const domainData = [
-    {
-      slug: "central-hive",
-      domain: "central.localhost",
-    },
-    {
-      slug: "acme-corp",
-      domain: "acme.localhost",
-    },
-    {
-      slug: "beta-labs",
-      domain: "beta.localhost",
-    },
+    { slug: "central-hive", domain: "central.localhost" },
+    { slug: "acme-corp", domain: "acme.localhost" },
+    { slug: "beta-labs", domain: "beta.localhost" },
   ];
 
   const tenantDomains = await Promise.all(
@@ -277,7 +327,6 @@ async function main() {
       if (!tenant) {
         throw new Error(`Tenant not found for slug ${slug}`);
       }
-
       return prisma.tenantDomain.upsert({
         where: { tenantId: tenant.id },
         update: { domain },
@@ -290,96 +339,7 @@ async function main() {
     `${COLORS.green}  ✔ ${tenantDomains.length} tenant domains seeded${COLORS.reset}`
   );
 
-  //
-  // 4) ROLES (central + tenant-local)
-  //
-  section("Seeding roles");
-
-  // Global central role
-  const centralSuperAdmin = await upsertGlobalRole({
-    key: "central_superadmin",
-    name: "Central Super Administrator",
-    scope: RoleScope.CENTRAL,
-  });
-
-  // Per-tenant roles
-  type TenantRoleSet = {
-    superadmin: number;
-    admin: number;
-    member: number;
-  };
-  const tenantRoleMap: Record<string, TenantRoleSet> = {};
-
-  for (const tenant of tenants) {
-    const superadmin = await upsertTenantRole({
-      tenantId: tenant.id,
-      key: "tenant_superadmin",
-      name: "Tenant Super Administrator",
-      scope: RoleScope.TENANT,
-    });
-
-    const admin = await upsertTenantRole({
-      tenantId: tenant.id,
-      key: "tenant_admin",
-      name: "Tenant Administrator",
-      scope: RoleScope.TENANT,
-    });
-
-    const member = await upsertTenantRole({
-      tenantId: tenant.id,
-      key: "tenant_member",
-      name: "Tenant Member",
-      scope: RoleScope.TENANT,
-    });
-
-    tenantRoleMap[tenant.id] = {
-      superadmin: superadmin.id,
-      admin: admin.id,
-      member: member.id,
-    };
-  }
-
-  // Reset all role-permission mappings and rebuild
-  await prisma.rolePermission.deleteMany({});
-
-  const allPermKeys = permissions.map((p) => p.key);
-  const tenantPermKeys = allPermKeys.filter((k) => k !== "manage_tenants");
-
-  const rolePermissionsData: { roleId: number; permissionId: number }[] = [];
-
-  // CENTRAL SUPERADMIN → all permissions
-  rolePermissionsData.push(...rolePerms(centralSuperAdmin.id, allPermKeys));
-
-  // Tenant roles per tenant
-  for (const tenant of tenants) {
-    const roles = tenantRoleMap[tenant.id];
-
-    // tenant_superadmin → all tenant permissions
-    rolePermissionsData.push(
-      ...rolePerms(roles.superadmin, tenantPermKeys)
-    );
-
-    // tenant_admin → same as tenant_superadmin (for now)
-    rolePermissionsData.push(...rolePerms(roles.admin, tenantPermKeys));
-
-    // tenant_member → restricted
-    rolePermissionsData.push(
-      ...rolePerms(roles.member, ["manage_files"])
-    );
-  }
-
-  await prisma.rolePermission.createMany({
-    data: rolePermissionsData,
-    skipDuplicates: true,
-  });
-
-  console.log(
-    `${COLORS.green}  ✔ central + tenant roles seeded with permissions${COLORS.reset}`
-  );
-
-  //
-  // 5) USERS (central + tenant superadmins)
-  //
+  // 7) USERS
   section("Seeding users (central + tenant superadmins)");
 
   const DEFAULT_PASSWORD = "Password123!";
@@ -389,10 +349,6 @@ async function main() {
     email: "central.admin@hive.test",
     password: DEFAULT_PASSWORD,
   });
-
-  const acmeTenant = tenants.find((t) => t.slug === "acme-corp")!;
-  const betaTenant = tenants.find((t) => t.slug === "beta-labs")!;
-  const centralHiveTenant = tenants.find((t) => t.slug === "central-hive")!;
 
   const acmeAdmin = await ensureUser({
     name: "Acme Superadmin",
@@ -416,9 +372,7 @@ async function main() {
     `${COLORS.green}  ✔ 4 admin users seeded/ensured${COLORS.reset}`
   );
 
-  //
-  // 6) USER ↔ TENANT MEMBERSHIPS
-  //
+  // 8) USER ↔ TENANT MEMBERSHIPS
   section("Linking users to tenants");
 
   await ensureUserTenant(acmeAdmin.id, acmeTenant.id);
@@ -429,34 +383,30 @@ async function main() {
     `${COLORS.green}  ✔ tenant memberships created (each tenant has one owner)${COLORS.reset}`
   );
 
-  //
-  // 7) USER ROLES
-  //
+  // 9) USER ROLES
   section("Assigning roles");
 
-  // GLOBAL central superadmin (no tenantId)
   await ensureUserRole({
     userId: centralUser.id,
     roleId: centralSuperAdmin.id,
     tenantId: null,
   });
 
-  // tenant superadmins (per-tenant, tenant-local roles)
   await ensureUserRole({
     userId: acmeAdmin.id,
-    roleId: tenantRoleMap[acmeTenant.id].superadmin,
+    roleId: tenantRolesByTenantId[acmeTenant.id].superadminId,
     tenantId: acmeTenant.id,
   });
 
   await ensureUserRole({
     userId: betaAdmin.id,
-    roleId: tenantRoleMap[betaTenant.id].superadmin,
+    roleId: tenantRolesByTenantId[betaTenant.id].superadminId,
     tenantId: betaTenant.id,
   });
 
   await ensureUserRole({
     userId: centralHiveAdmin.id,
-    roleId: tenantRoleMap[centralHiveTenant.id].superadmin,
+    roleId: tenantRolesByTenantId[centralHiveTenant.id].superadminId,
     tenantId: centralHiveTenant.id,
   });
 
@@ -464,24 +414,14 @@ async function main() {
     `${COLORS.green}  ✔ roles assigned (1 central superadmin, 1 per tenant)${COLORS.reset}`
   );
 
-  //
-  // 8) KEEP CENTRAL SUPERADMIN PERMISSIONS IN SYNC
-  //
+  // 10) KEEP CENTRAL SUPERADMIN PERMISSIONS IN SYNC
   section("Syncing central_superadmin permissions");
-  if (typeof syncCentralSuperAdminPermissions === "function") {
-    await syncCentralSuperAdminPermissions();
-    console.log(
-      `${COLORS.green}  ✔ central_superadmin permissions synced with all current permissions${COLORS.reset}`
-    );
-  } else {
-    console.warn(
-      `${COLORS.yellow}  ⚠ syncCentralSuperAdminPermissions is not a function; skipping sync.${COLORS.reset}`
-    );
-  }
+  await syncCentralSuperAdminPermissions();
+  console.log(
+    `${COLORS.green}  ✔ central_superadmin permissions synced${COLORS.reset}`
+  );
 
-  //
-  // 9) PRETTY SUMMARY
-  //
+  // 11) SUMMARY
   banner("Seed Complete");
 
   console.log(
@@ -491,9 +431,7 @@ async function main() {
   const domainsBySlug: Record<string, string> = {};
   tenantDomains.forEach((td) => {
     const tenant = tenants.find((t) => t.id === td.tenantId);
-    if (tenant) {
-      domainsBySlug[tenant.slug] = td.domain;
-    }
+    if (tenant) domainsBySlug[tenant.slug] = td.domain;
   });
 
   const usersTable = [
@@ -543,7 +481,6 @@ async function main() {
     const domainCell = (u.domain + " ".repeat(18)).slice(0, 18);
     const emailCell = (u.email + " ".repeat(26)).slice(0, 26);
     const pwdCell = u.password;
-
     console.log(
       `${COLORS.cyan}│ ${COLORS.reset}${roleCell} ${tenantCell} ${domainCell} ${emailCell} ${pwdCell} ${COLORS.cyan}│${COLORS.reset}`
     );
@@ -552,7 +489,6 @@ async function main() {
   console.log(
     `${COLORS.cyan}└────────────────────────────────────────────────────────────────────────────────────┘${COLORS.reset}\n`
   );
-
   console.log(
     `${COLORS.green}${COLORS.bold}You can now log in with any of the above users.${COLORS.reset}`
   );

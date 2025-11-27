@@ -1,30 +1,56 @@
 // lib/get-tenant-and-user.ts
 
 import { getCurrentSession } from "@/lib/auth-server";
-import { getCurrentTenant } from "@/lib/current-tenant";
+import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
-import { redirect } from "next/navigation";
 
-export async function getTenantAndUser(redirectTo: string = "/files") {
+export async function getTenantAndUser() {
   const { user } = await getCurrentSession();
 
-  if (!user) {
-    redirect(`/sign-in?callbackURL=${redirectTo}`);
+  if (!user?.id) {
+    return {
+      user: null,
+      tenant: null,
+      userRoles: [],
+      isTenantSuperadmin: false,
+    };
   }
 
-  // Tenant logic: current domain or 'central-hive' fallback
-  let tenant = await getCurrentTenant();
-  if (!tenant?.id) {
-    tenant = await prisma.tenant.findFirst({
-      where: { slug: "central-hive" },
-    });
+  const rawHost = headers().get("host") ?? "";
+  const host = rawHost.split(":")[0]; // strip port → "acme.localhost"
+
+  const tenantDomain = await prisma.tenantDomain.findUnique({
+    where: { domain: host },
+    include: { tenant: true },
+  });
+
+  const tenant = tenantDomain?.tenant ?? null;
+
+  if (!tenant) {
+    return {
+      user,
+      tenant: null,
+      userRoles: [],
+      isTenantSuperadmin: false,
+    };
   }
 
-  if (!tenant?.id) {
-    throw new Error(
-      "Tenant context is missing. Make sure a 'central-hive' tenant exists."
-    );
-  }
+  const userRoles = await prisma.userRole.findMany({
+    where: {
+      userId: user.id,
+      tenantId: tenant.id,
+    },
+    include: { role: true },
+  });
 
-  return { user, tenant };
+  const isTenantSuperadmin = userRoles.some(
+    (ur) => ur.role.key === "tenant_superadmin"
+  );
+
+  return {
+    user,
+    tenant,
+    userRoles,
+    isTenantSuperadmin,
+  };
 }

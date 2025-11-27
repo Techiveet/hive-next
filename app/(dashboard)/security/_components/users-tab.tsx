@@ -5,99 +5,148 @@ import { UsersTabClient } from "./users-tab-client";
 import { getCurrentSession } from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
 
-export async function UsersTab() {
+// We accept props from the Page now, so we don't have to recalculate context logic
+interface UsersTabProps {
+    tenantId: string | null;
+    tenantName: string | null;
+}
+
+export async function UsersTab({ tenantId, tenantName }: UsersTabProps) {
   const { user } = await getCurrentSession();
 
-  if (!user?.id) {
-    return (
-      <div className="rounded-xl border bg-card/60 p-4 text-xs text-muted-foreground">
-        You must be signed in to view central users.
-      </div>
-    );
-  }
+  if (!user?.id) return null;
 
-  // Load current user, all CENTRAL roles, and all users that have at least one central role
-  const [dbUser, roles, centralUsers] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: user.id as string },
-      include: {
-        userRoles: {
-          include: { role: true },
+  // ------------------------------------------------------------------
+  // CENTRAL CONTEXT
+  // ------------------------------------------------------------------
+  if (!tenantId) {
+    const [roles, centralUsers] = await Promise.all([
+      // Only Roles that are CENTRAL scoped and have no tenantId
+      prisma.role.findMany({
+        where: { scope: RoleScope.CENTRAL, tenantId: null },
+        orderBy: { id: "asc" },
+      }),
+      // Users that have a Role which is central
+      prisma.user.findMany({
+        where: {
+          userRoles: {
+            some: { tenantId: null }, 
+          },
         },
-      },
-    }),
-    prisma.role.findMany({
-      where: { scope: RoleScope.CENTRAL },
-      orderBy: { id: "asc" },
-    }),
-    prisma.user.findMany({
-      where: {
-        userRoles: {
-          some: { tenantId: null }, // users that have at least one central role
+        orderBy: { createdAt: "desc" },
+        include: {
+          userRoles: {
+            include: { role: true },
+          },
         },
-      },
-      orderBy: { createdAt: "desc" },
-      include: {
-        userRoles: {
-          include: { role: true },
+      }),
+    ]);
+
+    const assignableRoles = roles
+      .filter((r) => r.key !== "central_superadmin")
+      .map((r) => ({ id: r.id, key: r.key, name: r.name }));
+
+    // Transform for client
+    const usersForClient = centralUsers.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      createdAt: u.createdAt.toISOString(),
+      isActive: u.isActive,
+      userRoles: u.userRoles.map((ur) => ({
+        id: ur.id,
+        tenantId: ur.tenantId,
+        role: {
+          key: ur.role.key,
+          name: ur.role.name,
+          scope: ur.role.scope,
         },
-      },
-    }),
-  ]);
-
-  // Guard: only central_superadmin (tenantId = null) can manage central users
-  const isCentralSuperadmin = dbUser?.userRoles.some(
-    (ur) => ur.role.key === "central_superadmin" && ur.tenantId === null
-  );
-
-  if (!dbUser || !isCentralSuperadmin) {
-    return (
-      <div className="rounded-xl border bg-card/60 p-4 text-xs text-muted-foreground">
-        Only the central superadministrator can manage central users.
-      </div>
-    );
-  }
-
-  // Map roles that can be assigned in the dropdown (central roles EXCLUDING central_superadmin)
-  const assignableRoles = roles
-    .filter((r) => r.key !== "central_superadmin")
-    .map((r) => ({
-      id: r.id,
-      key: r.key,
-      name: r.name,
+      })),
     }));
 
-  // Map users into a DTO for the client
-  const usersForClient = centralUsers.map((u) => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    createdAt: u.createdAt.toISOString(),
-    image: (u as any).image ?? null,
-    isActive: (u as any).isActive ?? true,
-    userRoles: u.userRoles.map((ur) => ({
-      id: ur.id,
-      tenantId: ur.tenantId,
-      role: {
-        key: ur.role.key,
-        name: ur.role.name,
-        scope: ur.role.scope,
-      },
-    })),
-  }));
+    const roleMap: Record<number, string> = {};
+    roles.forEach((r) => (roleMap[r.id] = r.name));
 
-  // Simple lookup map for display (not strictly required, but handy)
-  const centralRoleMap: Record<number, string> = {};
-  roles.forEach((r) => {
-    centralRoleMap[r.id] = r.name;
-  });
+    return (
+      <UsersTabClient
+        users={usersForClient}
+        assignableRoles={assignableRoles}
+        centralRoleMap={roleMap}
+        currentUserId={user.id}
+        tenantId={null}
+        tenantName={null}
+      />
+    );
+  }
 
-  return (
-    <UsersTabClient
-      users={usersForClient}
-      assignableRoles={assignableRoles}
-      centralRoleMap={centralRoleMap}
-      currentUserId={dbUser.id}
-    />
-  );
+  // ------------------------------------------------------------------
+  // TENANT CONTEXT
+  // ------------------------------------------------------------------
+  if (tenantId) {
+    // 1. Get Roles for this tenant
+    // 2. Get Users for this tenant
+    
+    const [roles, memberships] = await Promise.all([
+      prisma.role.findMany({
+        where: { 
+            scope: RoleScope.TENANT, 
+            tenantId: tenantId // Strictly this tenant
+        },
+        orderBy: { id: "asc" },
+      }),
+      prisma.userTenant.findMany({
+        where: { tenantId },
+        include: {
+          user: {
+            include: {
+              // Get roles ONLY for this tenant
+              userRoles: {
+                where: { tenantId }, 
+                include: { role: true },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const tenantUsers = memberships.map((m) => m.user);
+
+    const assignableRoles = roles
+      .filter((r) => r.key !== "tenant_superadmin")
+      .map((r) => ({ id: r.id, key: r.key, name: r.name }));
+
+    const usersForClient = tenantUsers.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      createdAt: u.createdAt.toISOString(),
+      isActive: u.isActive,
+      userRoles: u.userRoles.map((ur) => ({
+        id: ur.id,
+        tenantId: ur.tenantId,
+        role: {
+          key: ur.role.key,
+          name: ur.role.name,
+          scope: ur.role.scope,
+        },
+      })),
+    }));
+
+    const roleMap: Record<number, string> = {};
+    roles.forEach((r) => (roleMap[r.id] = r.name));
+
+    return (
+      <UsersTabClient
+        users={usersForClient}
+        assignableRoles={assignableRoles}
+        centralRoleMap={roleMap}
+        currentUserId={user.id}
+        tenantId={tenantId}
+        tenantName={tenantName}
+      />
+    );
+  }
+
+  return null;
 }

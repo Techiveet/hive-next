@@ -1,4 +1,4 @@
-// emails/UserAccountEmail.tsx
+// emails/user-account-template.tsx
 
 import * as React from "react";
 
@@ -34,6 +34,14 @@ export interface UserAccountEmailProps {
   roleName?: string;
   tenantName?: string;
   loginUrl?: string;
+
+  // NEW
+  tenantDomain?: string;
+
+  /** Only used for `kind === "updated"` */
+  changedName?: boolean;
+  changedPassword?: boolean;
+  changedRole?: boolean;
 }
 
 /* ------------------------------------------------------------------
@@ -71,12 +79,17 @@ export const UserAccountEmail = ({
   roleName,
   tenantName,
   loginUrl,
+  changedName,
+  changedPassword,
+  changedRole,
+  tenantDomain,
 }: UserAccountEmailProps) => {
   const appUrl =
     loginUrl || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-  const logoURL = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-    }/logo/logo.png`;
+  const logoURL = `${
+    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+  }/logo/logo.png`;
 
   const statusIsActive = status === "ACTIVE";
 
@@ -100,8 +113,16 @@ export const UserAccountEmail = ({
       "Your account has been deactivated. You will no longer be able to sign in until an administrator re-activates it.";
   }
 
-  const showPasswordBlock = !!password;
+  const showPasswordBlock = !!password; // we only pass password when we want to show it
   const showRoleBlock = !!roleName;
+
+  const hasUpdateDetails =
+    kind === "updated" &&
+    !!(changedName || changedPassword || changedRole);
+
+  const allUpdated =
+    kind === "updated" &&
+    !!(changedName && changedPassword && changedRole);
 
   return (
     <Html>
@@ -162,29 +183,47 @@ export const UserAccountEmail = ({
               {showRoleBlock && (
                 <Column style={{ textAlign: "right" }}>
                   <Text style={styles.contentText}>
-                    Role:{" "}
-                    <span style={styles.roleBadge}>
-                      {roleName}
-                    </span>
+                    Role: <span style={styles.roleBadge}>{roleName}</span>
                   </Text>
                 </Column>
               )}
             </Row>
+             {tenantDomain && (
+              <Text style={styles.contentText}>
+                Workspace domain:{" "}
+                <span style={styles.domainBadge}>{tenantDomain}</span>
+              </Text>
+            )}
 
             {/* WHAT CHANGED – only for updates */}
-            {kind === "updated" && (showPasswordBlock || showRoleBlock) && (
+            {hasUpdateDetails && (
               <>
                 <Text style={styles.sectionLabel}>What changed?</Text>
                 <ul style={styles.list}>
-                  {showPasswordBlock && (
+                  {allUpdated ? (
                     <li style={styles.listItem}>
-                      Your sign-in password was updated.
+                      Your <strong>name</strong>, <strong>role</strong> and{" "}
+                      <strong>sign-in password</strong> were updated.
                     </li>
-                  )}
-                  {showRoleBlock && (
-                    <li style={styles.listItem}>
-                      Your assigned role is now <strong>{roleName}</strong>.
-                    </li>
+                  ) : (
+                    <>
+                      {changedName && (
+                        <li style={styles.listItem}>
+                          Your display <strong>name</strong> was updated.
+                        </li>
+                      )}
+                      {changedRole && (
+                        <li style={styles.listItem}>
+                          Your assigned <strong>role</strong> is now{" "}
+                          <strong>{roleName}</strong>.
+                        </li>
+                      )}
+                      {changedPassword && (
+                        <li style={styles.listItem}>
+                          Your <strong>sign-in password</strong> was updated.
+                        </li>
+                      )}
+                    </>
                   )}
                 </ul>
               </>
@@ -202,9 +241,7 @@ export const UserAccountEmail = ({
                     {kind === "created" ? "Temporary password" : "New password"}
                     :
                   </strong>{" "}
-                  <span style={styles.code}>
-                    {password}
-                  </span>
+                  <span style={styles.code}>{password}</span>
                 </Text>
                 <Text style={styles.credentialsHint}>
                   For security, please sign in and change this password as soon
@@ -232,7 +269,8 @@ export const UserAccountEmail = ({
             <Text style={styles.metaText}>
               This email was generated automatically by{" "}
               <span style={{ fontWeight: 600 }}>{displayTenant}</span> when your
-              account was {kind === "created"
+              account was{" "}
+              {kind === "created"
                 ? "created"
                 : kind === "updated"
                 ? "updated"
@@ -338,6 +376,15 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 999,
     backgroundColor: "#eef2ff",
     color: "#3730a3",
+    fontSize: 11,
+    fontWeight: 600,
+  },
+   domainBadge: {
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: 999,
+    backgroundColor: "#e0f2fe",
+    color: "#075985",
     fontSize: 11,
     fontWeight: 600,
   },

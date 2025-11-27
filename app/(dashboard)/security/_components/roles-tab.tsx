@@ -13,93 +13,97 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Eye,
+  Lock,
+  Pencil,
+  PlusCircle,
+  ShieldCheck,
+  Trash2,
+} from "lucide-react";
 import { deleteRoleAction, upsertRoleAction } from "../roles-actions";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/data-table";
-import type { Permission } from "@prisma/client";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
-// DTOs from the server page
-type PermissionDto = {
-  id: number;
-  key: string;
-  name: string;
-};
-
+// ---------- Types ----------
 type RoleDto = {
   id: number;
   key: string;
   name: string;
   scope: "CENTRAL" | "TENANT";
-  permissions: PermissionDto[];
+  permissions: { id: number; key: string; name: string }[];
+  tenantId: string | null;
 };
 
-const PROTECTED_ROLE_KEYS = ["central_superadmin", "tenant_superadmin"];
-
-type RoleFormState = {
-  id: number | null;
-  name: string;
-  key: string;
-  scope: "CENTRAL" | "TENANT";
-  permissionIds: number[];
-};
-
-const emptyForm: RoleFormState = {
-  id: null,
-  name: "",
-  key: "",
-  scope: "CENTRAL",
-  permissionIds: [],
+type Props = {
+  roles: RoleDto[];
+  allPermissions: any[];
+  scopeProp: "CENTRAL" | "TENANT";
+  tenantId: string | null;
 };
 
 export function RolesTab({
   roles,
   allPermissions,
-}: {
-  roles: RoleDto[];
-  allPermissions: Permission[];
-}) {
+  scopeProp,
+  tenantId,
+}: Props) {
   const router = useRouter();
-
-  const [isModalOpen, setIsModalOpen] = React.useState(false);
-  const [form, setForm] = React.useState<RoleFormState>(emptyForm);
-  const [error, setError] = React.useState<string | null>(null);
   const [isPending, startTransition] = React.useTransition();
 
-  const isProtected = (key: string) => PROTECTED_ROLE_KEYS.includes(key);
+  // Modals
+  const [createModalOpen, setCreateModalOpen] = React.useState(false);
+  const [viewModalOpen, setViewModalOpen] = React.useState(false);
 
-  function openCreateModal() {
-    setError(null);
-    setForm({
-      ...emptyForm,
-      scope: "CENTRAL",
-    });
-    setIsModalOpen(true);
+  // State
+  const [viewRole, setViewRole] = React.useState<RoleDto | null>(null);
+  const [form, setForm] = React.useState<{
+    id: number | null;
+    name: string;
+    key: string;
+    permissionIds: number[];
+  }>({
+    id: null,
+    name: "",
+    key: "",
+    permissionIds: [],
+  });
+
+  const isProtected = (key: string) =>
+    ["central_superadmin", "tenant_superadmin"].includes(key);
+
+  function openCreate() {
+    setForm({ id: null, name: "", key: "", permissionIds: [] });
+    setCreateModalOpen(true);
   }
 
-  function openEditModal(role: RoleDto) {
-    setError(null);
+  function openEdit(role: RoleDto) {
     setForm({
       id: role.id,
       name: role.name,
       key: role.key,
-      scope: role.scope,
       permissionIds: role.permissions.map((p) => p.id),
     });
-    setIsModalOpen(true);
+    setCreateModalOpen(true);
   }
 
-  function closeModal() {
-    if (isPending) return;
-    setIsModalOpen(false);
-  }
-
-  function updateForm<K extends keyof RoleFormState>(key: K, value: RoleFormState[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
+  function openView(role: RoleDto) {
+    setViewRole(role);
+    setViewModalOpen(true);
   }
 
   function togglePermission(id: number) {
@@ -114,79 +118,24 @@ export function RolesTab({
     });
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-
-    if (!form.name.trim() || !form.key.trim()) {
-      setError("Name and key are required.");
-      return;
-    }
-
-    const scopeToSend =
-      form.id != null ? form.scope : ("CENTRAL" as "CENTRAL" | "TENANT");
-
     startTransition(async () => {
       try {
-        await upsertRoleAction({
-          id: form.id,
-          name: form.name.trim(),
-          key: form.key.trim(),
-          scope: scopeToSend,
-          permissionIds: form.permissionIds,
-        });
-        toast.success(form.id ? "Role updated." : "Role created.");
-        setIsModalOpen(false);
+        await upsertRoleAction({ ...form, scope: scopeProp, tenantId });
+        toast.success(form.id ? "Role updated" : "Role created");
+        setCreateModalOpen(false);
         router.refresh();
       } catch (err: any) {
-        console.error("Failed to save role", err);
-        const msg = String(err?.message || "");
-        if (msg === "ROLE_NAME_REQUIRED") {
-          toast.error("Role name is required.");
-        } else if (msg === "ROLE_KEY_REQUIRED") {
-          toast.error("Role key is required.");
-        } else if (msg === "ROLE_KEY_INVALID") {
-          toast.error("Role key must be snake_case (lowercase, digits, underscore).");
-        } else if (msg === "ROLE_KEY_IN_USE") {
-          toast.error("This role key is already in use.");
-        } else {
-          toast.error("Unexpected error while saving role. Check logs.");
-        }
+        toast.error(err.message || "Failed to save role");
       }
     });
   }
 
-  const editingProtected = form.id !== null && isProtected(form.key);
-
-  async function deleteSingleRole(role: RoleDto) {
-    if (isProtected(role.key)) {
-      toast.error("Protected roles cannot be deleted.");
-      return;
-    }
-
-    startTransition(async () => {
-      try {
-        await deleteRoleAction(role.id);
-        toast.success("Role deleted.");
-        router.refresh();
-      } catch (err: any) {
-        console.error("Failed to delete role", err);
-        const msg = String(err?.message || "");
-        if (msg === "ROLE_PROTECTED") {
-          toast.error("Protected roles cannot be deleted.");
-        } else if (msg === "ROLE_IN_USE") {
-          toast.error(
-            "This role is used by one or more users and cannot be deleted."
-          );
-        } else {
-          toast.error("Failed to delete role. Check server logs.");
-        }
-      }
-    });
-  }
-
-  const columns = React.useMemo<ColumnDef<RoleDto>[]>(() => {
-    return [
+  // ---------- Columns (with select + export meta) ----------
+  const columns = React.useMemo<ColumnDef<RoleDto>[]>(
+    () => [
+      // select column for FAB (copy / export / delete)
       {
         id: "select",
         header: ({ table }) => (
@@ -196,10 +145,9 @@ export function RolesTab({
                 table.getIsAllPageRowsSelected() ||
                 (table.getIsSomePageRowsSelected() && "indeterminate")
               }
-              onCheckedChange={(value) =>
-                table.toggleAllPageRowsSelected(!!value)
+              onCheckedChange={(val) =>
+                table.toggleAllPageRowsSelected(!!val)
               }
-              aria-label="Select all"
             />
           </div>
         ),
@@ -207,138 +155,119 @@ export function RolesTab({
           <div className="flex justify-center">
             <Checkbox
               checked={row.getIsSelected()}
-              onCheckedChange={(value) => row.toggleSelected(!!value)}
-              aria-label="Select row"
+              onCheckedChange={(val) => row.toggleSelected(!!val)}
             />
           </div>
         ),
-        enableSorting: false,
-        enableHiding: false,
-        meta: { exportable: false, printable: false, align: "center" },
+        meta: { align: "center", exportable: false, printable: false },
       },
       {
         accessorKey: "name",
-        header: "Role",
+        header: "Role Name",
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 text-indigo-500" />
+            <span className="font-semibold text-foreground">
+              {row.original.name}
+            </span>
+          </div>
+        ),
         meta: {
-          exportable: true,
-          printable: true,
           exportValue: (r: RoleDto) => r.name,
         },
-        cell: ({ row }) => (
-          <span className="font-medium">{row.original.name}</span>
-        ),
       },
       {
         accessorKey: "key",
-        header: "Key",
+        header: "System Key",
+        cell: ({ row }) => (
+          <Badge
+            variant="secondary"
+            className="font-mono text-[10px]"
+          >
+            {row.original.key}
+          </Badge>
+        ),
         meta: {
-          exportable: true,
-          printable: true,
           exportValue: (r: RoleDto) => r.key,
         },
-        cell: ({ row }) => (
-          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px]">
-            {row.original.key}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "scope",
-        header: "Scope",
-        meta: {
-          exportable: true,
-          printable: true,
-          exportValue: (r: RoleDto) => r.scope,
-        },
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">
-            {row.original.scope}
-          </span>
-        ),
       },
       {
         id: "permissions",
         header: "Permissions",
-        meta: {
-          exportable: true,
-          printable: true,
-          exportValue: (role: RoleDto) =>
-            role.permissions && role.permissions.length
-              ? role.permissions.map((p) => p.key).join(" | ")
-              : "No permissions",
-        },
         cell: ({ row }) => {
-          const perms = row.original.permissions ?? [];
-          if (!perms.length) {
-            return (
-              <span className="text-xs text-muted-foreground">
-                No permissions
-              </span>
-            );
-          }
-          const labels = perms.map((p) => p.key);
-          const first = labels.slice(0, 3).join(", ");
-          const extra = labels.length > 3 ? ` +${labels.length - 3} more` : "";
+          const count = row.original.permissions.length;
           return (
-            <span className="text-xs">
-              {first}
-              {extra}
+            <span className="text-xs text-muted-foreground">
+              {count} permission{count !== 1 ? "s" : ""} assigned
             </span>
           );
+        },
+        meta: {
+          // export full permission names, comma separated
+          exportValue: (r: RoleDto) =>
+            r.permissions.map((p) => p.name).join(", "),
         },
       },
       {
         id: "actions",
-        header: () => (
-          <div className="flex justify-end pr-1 text-right">Actions</div>
-        ),
-        enableSorting: false,
-        enableHiding: false,
-        meta: { exportable: false, printable: false, align: "right" },
+        header: () => <div className="text-right">Actions</div>,
         cell: ({ row }) => {
           const role = row.original;
           const protectedRole = isProtected(role.key);
+
           return (
-            <div className="flex justify-end gap-2">
+            <div className="flex justify-end gap-1">
               <Button
-                type="button"
-                variant="outline"
-                size="xs"
-                className="rounded-full border-muted-foreground/30 px-3 text-[10px]"
-                onClick={() => openEditModal(role)}
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-blue-500 hover:bg-blue-50"
+                onClick={() => openView(role)}
               >
-                Edit
+                <Eye className="h-4 w-4" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-amber-500 hover:bg-amber-50"
+                onClick={() => openEdit(role)}
+              >
+                <Pencil className="h-4 w-4" />
               </Button>
 
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    className="rounded-full border-destructive/40 px-3 text-[10px] text-destructive hover:bg-destructive/10"
-                    disabled={protectedRole || isPending}
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-red-500 hover:bg-red-50"
+                    disabled={protectedRole}
                   >
-                    Delete
+                    {protectedRole ? (
+                      <Lock className="h-4 w-4 opacity-50" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent className="max-w-sm text-[11px]">
+                <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>
-                      Delete role &quot;{role.name}&quot;?
-                    </AlertDialogTitle>
+                    <AlertDialogTitle>Delete Role?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will detach the role from all users. This action
-                      cannot be undone.
+                      This will detach permissions from users with this role.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel className="text-[11px]">
-                      Cancel
-                    </AlertDialogCancel>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
-                      className="bg-destructive text-[11px] hover:bg-destructive/90"
-                      onClick={() => deleteSingleRole(role)}
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={() =>
+                        startTransition(async () => {
+                          await deleteRoleAction(role.id);
+                          router.refresh();
+                          toast.success("Role deleted");
+                        })
+                      }
                     >
                       Delete
                     </AlertDialogAction>
@@ -348,201 +277,212 @@ export function RolesTab({
             </div>
           );
         },
+        meta: { align: "right", exportable: false, printable: false },
       },
-    ];
-  }, [isPending, router]);
+    ],
+    [isProtected]
+  );
 
   return (
     <div className="space-y-4">
-      {/* Header + New Role button */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between p-1">
         <div>
-          <h2 className="text-sm font-semibold">Roles</h2>
-          <p className="text-[11px] text-muted-foreground">
-            Define central roles and attach permissions. The{" "}
-            <span className="font-semibold">central_superadmin</span> role
-            automatically has all permissions.
+          <h2 className="text-lg font-bold">Roles &amp; Capabilities</h2>
+          <p className="text-sm text-muted-foreground">
+            Define what users can do in this workspace.
           </p>
         </div>
-
         <Button
-          type="button"
-          className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[11px] font-medium"
-          onClick={openCreateModal}
+          onClick={openCreate}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
         >
-          + New Role
+          <PlusCircle className="mr-2 h-4 w-4" /> Create Role
         </Button>
       </div>
 
-      {/* DataTable for roles */}
-      <DataTable<RoleDto, unknown>
-        columns={columns}
-        data={roles}
-        searchColumnId="name"
-        searchPlaceholder="Search roles..."
-        fileName="roles"
-        onRefresh={async () => router.refresh()}
-        onDeleteRows={async (rows) => {
-          const deletable = rows.filter((r) => !isProtected(r.key));
-          if (!deletable.length) {
-            toast.error("No deletable roles selected.");
-            return;
-          }
-
-          let anyInUse = 0;
-          let deleted = 0;
-
-          for (const r of deletable) {
-            try {
-              await deleteRoleAction(r.id);
-              deleted++;
-            } catch (err: any) {
-              console.error("Bulk delete role failed", err);
-              const msg = String(err?.message || "");
-              if (msg === "ROLE_IN_USE") {
-                anyInUse++;
-              } else if (msg === "ROLE_PROTECTED") {
-                // should not happen here because we filter, but just in case
-              }
+      <div className="rounded-md border bg-card">
+        <DataTable
+          columns={columns}
+          data={roles}
+          searchColumnId="name"
+          searchPlaceholder="Filter roles..."
+          onRefresh={() => router.refresh()}
+          onDeleteRows={async (rows) => {
+            const deletable = rows.filter((r) => !isProtected(r.key));
+            if (!deletable.length) {
+              toast.error("No deletable roles selected.");
+              return;
             }
-          }
 
-          if (deleted) {
-            toast.success(`Deleted ${deleted} role${deleted > 1 ? "s" : ""}.`);
-          }
-          if (anyInUse) {
-            toast.error(
-              `${anyInUse} role${
-                anyInUse > 1 ? "s are" : " is"
-              } used by users and cannot be deleted.`
+            let errors = 0;
+
+            await Promise.all(
+              deletable.map(async (role) => {
+                try {
+                  await deleteRoleAction(role.id);
+                } catch (e: any) {
+                  errors++;
+                  toast.error(
+                    e?.message ||
+                      `Failed to delete role "${role.name}".`
+                  );
+                }
+              })
             );
-          }
 
-          router.refresh();
-        }}
-      />
+            router.refresh();
 
-      {/* Create / Edit Role modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-2xl border bg-card p-4 shadow-xl">
-            <h3 className="mb-1 text-sm font-semibold">
-              {form.id ? "Edit Role" : "Create Role"}
-            </h3>
-            <p className="mb-3 text-[11px] text-muted-foreground">
-              {editingProtected
-                ? "This is a protected role. You can only rename it."
-                : "Set the role details and attach permissions."}
-            </p>
+            if (errors === 0)
+              toast.success("Selected roles deleted.");
+            else if (errors === deletable.length)
+              toast.error("Failed to delete selected roles.");
+            else
+              toast.warning(
+                "Some roles could not be deleted. Check the errors."
+              );
+          }}
+        />
+      </div>
 
-            <form onSubmit={handleSubmit} className="space-y-3 text-[11px]">
-              {/* Name */}
+      {/* CREATE/EDIT MODAL */}
+      <Dialog open={createModalOpen} onOpenChange={setCreateModalOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {form.id ? "Edit Role" : "Create New Role"}
+            </DialogTitle>
+            <DialogDescription>
+              Configure role details and check permissions below.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-medium">Name</label>
-                <input
-                  type="text"
-                  className="h-8 w-full rounded-md border px-2 text-[11px]"
-                  value={form.name}
-                  onChange={(e) => updateForm("name", e.target.value)}
-                  required
-                />
-              </div>
-
-              {/* Key */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium">
-                  Key (unique, snake_case)
+                <label className="text-xs font-medium uppercase text-muted-foreground">
+                  Name
                 </label>
                 <input
-                  type="text"
-                  className="h-8 w-full rounded-md border px-2 text-[11px]"
-                  value={form.key}
-                  onChange={(e) => updateForm("key", e.target.value)}
+                  className="w-full rounded border p-2 text-sm"
+                  value={form.name}
+                  onChange={(e) =>
+                    setForm({ ...form, name: e.target.value })
+                  }
                   required
-                  disabled={editingProtected}
                 />
               </div>
-
-              {/* Scope display only */}
               <div className="space-y-1">
-                <label className="text-[10px] font-medium">Scope</label>
-                <div className="inline-flex rounded-full bg-muted px-2 py-1 text-[10px] text-muted-foreground">
-                  {form.id ? form.scope : "CENTRAL"}
-                </div>
+                <label className="text-xs font-medium uppercase text-muted-foreground">
+                  Key
+                </label>
+                <input
+                  className="w-full rounded border p-2 text-sm font-mono"
+                  value={form.key}
+                  onChange={(e) =>
+                    setForm({ ...form, key: e.target.value })
+                  }
+                  disabled={!!form.id}
+                  required
+                />
               </div>
+            </div>
 
-              {/* Permissions */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium">Permissions</label>
-                <div className="max-h-44 space-y-1 overflow-y-auto rounded-md border p-2 text-[10px]">
-                  {allPermissions.length === 0 ? (
-                    <p className="text-muted-foreground">
-                      No permissions defined yet.
-                    </p>
-                  ) : (
-                    allPermissions.map((perm) => (
-                      <label
-                        key={perm.id}
-                        className="flex cursor-pointer items-center gap-2"
-                      >
-                        <input
-                          type="checkbox"
-                          className="h-3 w-3"
-                          checked={form.permissionIds.includes(perm.id)}
-                          onChange={() => togglePermission(perm.id)}
-                          disabled={editingProtected}
-                        />
-                        <span>
-                          <span className="font-mono">{perm.key}</span> –{" "}
-                          {perm.name}
-                        </span>
-                      </label>
-                    ))
-                  )}
+            <div className="space-y-2">
+              <label className="text-xs font-medium uppercase text-muted-foreground">
+                Permissions
+              </label>
+              <ScrollArea className="h-[200px] rounded-md border p-4">
+                <div className="grid grid-cols-1 gap-2">
+                  {allPermissions.map((p) => (
+                    <label
+                      key={p.id}
+                      className="flex items-center gap-3 rounded hover:bg-muted/50 p-1 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={form.permissionIds.includes(p.id)}
+                        onChange={() => togglePermission(p.id)}
+                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div className="text-sm">
+                        <span className="font-medium">{p.name}</span>
+                        {p.isGlobal && (
+                          <span className="ml-2 text-[10px] text-muted-foreground border rounded px-1">
+                            System
+                          </span>
+                        )}
+                      </div>
+                    </label>
+                  ))}
                 </div>
-                {editingProtected && (
-                  <p className="text-[10px] text-muted-foreground">
-                    Permissions for protected roles are managed automatically.
-                  </p>
-                )}
-              </div>
+              </ScrollArea>
+            </div>
 
-              {error && (
-                <p className="text-[11px] text-red-500">
-                  {error}
-                </p>
-              )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setCreateModalOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isPending}>
+                Save Role
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
 
-              <div className="mt-3 flex justify-end gap-2">
-                <Button
-                  type="button"
+      {/* VIEW MODAL */}
+      <Dialog open={viewModalOpen} onOpenChange={setViewModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {viewRole?.name}
+              {viewRole && (
+                <Badge
                   variant="outline"
-                  size="sm"
-                  className="rounded-full px-3 text-[11px]"
-                  onClick={closeModal}
-                  disabled={isPending}
+                  className="text-xs font-normal"
                 >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  size="sm"
-                  className="rounded-full px-4 text-[11px]"
-                  disabled={isPending}
-                >
-                  {isPending
-                    ? form.id
-                      ? "Saving..."
-                      : "Creating..."
-                    : form.id
-                    ? "Save changes"
-                    : "Create role"}
-                </Button>
+                  {viewRole.key}
+                </Badge>
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              Assigned permissions for this role.
+            </DialogDescription>
+          </DialogHeader>
+
+          <ScrollArea className="h-[300px] pr-4">
+            {viewRole?.permissions.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic">
+                No permissions assigned.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {viewRole?.permissions.map((p) => (
+                  <Badge
+                    key={p.id}
+                    variant="secondary"
+                    className="px-2 py-1 text-xs"
+                  >
+                    {p.name}
+                  </Badge>
+                ))}
               </div>
-            </form>
+            )}
+          </ScrollArea>
+
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              onClick={() => setViewModalOpen(false)}
+            >
+              Close
+            </Button>
           </div>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
