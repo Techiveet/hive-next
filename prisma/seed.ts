@@ -122,24 +122,44 @@ async function ensureUserRole(opts: {
 async function main() {
   banner("Hive Seed – Roles, Permissions, Tenants & Superadmins");
 
+  // ---------------------------------------------------------------------------
   // 1) PERMISSIONS – GLOBAL (tenantId = null)
+  // ---------------------------------------------------------------------------
   section("Seeding permissions");
 
   const permissionsData = [
-    // core system / central only
+    // --- core system / central only ---
     { key: "manage_tenants", name: "Manage Tenants" },
     { key: "manage_billing", name: "Manage Billing & Subscriptions" },
     { key: "view_audit_logs", name: "View Audit Logs" },
 
-    // security
+    // --- security area (high-level switches) ---
     { key: "view_security", name: "View Security Area" },
     { key: "manage_security", name: "Manage Security (Users/Roles)" },
 
-    // user / role granular
+    // --- USERS: CRUD permissions ---
+    { key: "users.view", name: "View Users" },
+    { key: "users.create", name: "Create Users" },
+    { key: "users.update", name: "Update Users" },
+    { key: "users.delete", name: "Delete Users" },
+
+    // --- ROLES: CRUD permissions ---
+    { key: "roles.view", name: "View Roles" },
+    { key: "roles.create", name: "Create Roles" },
+    { key: "roles.update", name: "Update Roles" },
+    { key: "roles.delete", name: "Delete Roles" },
+
+    // --- PERMISSIONS: CRUD permissions ---
+    { key: "permissions.view", name: "View Permissions" },
+    { key: "permissions.create", name: "Create Permissions" },
+    { key: "permissions.update", name: "Update Permissions" },
+    { key: "permissions.delete", name: "Delete Permissions" },
+
+    // --- coarse-grained legacy flags (keep if existing code uses them) ---
     { key: "manage_users", name: "Manage Users" },
     { key: "manage_roles", name: "Manage Roles & Permissions" },
 
-    // file manager
+    // --- file manager ---
     { key: "manage_files", name: "Manage Files & Folders" },
     { key: "manage_storage_settings", name: "Manage Storage Settings" },
   ];
@@ -148,7 +168,7 @@ async function main() {
     data: permissionsData.map((p) => ({
       key: p.key,
       name: p.name,
-      tenantId: null,
+      tenantId: null, // global/system permissions
     })),
     skipDuplicates: true,
   });
@@ -172,7 +192,9 @@ async function main() {
       .filter(Boolean) as { roleId: number; permissionId: number }[];
   }
 
+  // ---------------------------------------------------------------------------
   // 2) TENANTS
+  // ---------------------------------------------------------------------------
   section("Seeding tenants");
 
   const tenantsData = [
@@ -199,7 +221,9 @@ async function main() {
   const acmeTenant = tenants.find((t) => t.slug === "acme-corp")!;
   const betaTenant = tenants.find((t) => t.slug === "beta-labs")!;
 
-  // 3) CENTRAL ROLE (GLOBAL, UNIQUE) – manual find/update/create
+  // ---------------------------------------------------------------------------
+  // 3) CENTRAL ROLE (GLOBAL, UNIQUE – tenantId = null)
+  // ---------------------------------------------------------------------------
   section("Seeding central role");
 
   let centralSuperAdmin = await prisma.role.findFirst({
@@ -229,7 +253,9 @@ async function main() {
     });
   }
 
+  // ---------------------------------------------------------------------------
   // 4) TENANT ROLES (PER TENANT – UNIQUE PER TENANT)
+  // ---------------------------------------------------------------------------
   section("Seeding tenant roles");
 
   type TenantRoleIds = {
@@ -305,10 +331,14 @@ async function main() {
     };
   }
 
+  // ---------------------------------------------------------------------------
   // 5) ROLE PERMISSIONS (CENTRAL + TENANT)
+  // ---------------------------------------------------------------------------
   section("Seeding role permissions");
 
   const allPermKeys = permissions.map((p) => p.key);
+
+  // everything except manage_tenants is allowed for tenant roles
   const tenantPermKeys = allPermKeys.filter((k) => k !== "manage_tenants");
 
   const allRoleIds = [
@@ -328,7 +358,7 @@ async function main() {
     // CENTRAL SUPERADMIN → all permissions
     ...rolePerms(centralSuperAdmin.id, allPermKeys),
 
-    // per-tenant roles
+    // PER-TENANT ROLES
     ...Object.values(tenantRolesByTenantId).flatMap((r) => [
       // tenant superadmin → all except manage_tenants
       ...rolePerms(r.superadminId, tenantPermKeys),
@@ -348,7 +378,9 @@ async function main() {
     `${COLORS.green}  ✔ central + tenant roles seeded with permissions${COLORS.reset}`
   );
 
+  // ---------------------------------------------------------------------------
   // 6) TENANT DOMAINS
+  // ---------------------------------------------------------------------------
   section("Seeding tenant domains");
 
   const domainData = [
@@ -375,7 +407,9 @@ async function main() {
     `${COLORS.green}  ✔ ${tenantDomains.length} tenant domains seeded${COLORS.reset}`
   );
 
+  // ---------------------------------------------------------------------------
   // 7) USERS (CENTRAL + TENANT SUPERADMINS)
+  // ---------------------------------------------------------------------------
   section("Seeding users (central + tenant superadmins)");
 
   const DEFAULT_PASSWORD = "Password123!";
@@ -410,7 +444,9 @@ async function main() {
     `${COLORS.green}  ✔ 4 admin users seeded/ensured${COLORS.reset}`
   );
 
+  // ---------------------------------------------------------------------------
   // 8) USER ↔ TENANT MEMBERSHIPS
+  // ---------------------------------------------------------------------------
   section("Linking users to tenants");
 
   await ensureUserTenant(acmeAdmin.id, acmeTenant.id);
@@ -421,7 +457,9 @@ async function main() {
     `${COLORS.green}  ✔ tenant memberships created (one owner per tenant)${COLORS.reset}`
   );
 
+  // ---------------------------------------------------------------------------
   // 9) USER ROLES – ENFORCE ONE HOLDER PER SUPERADMIN ROLE
+  // ---------------------------------------------------------------------------
   section("Assigning roles");
 
   // GLOBAL central superadmin (no tenantId)
@@ -454,14 +492,18 @@ async function main() {
     `${COLORS.green}  ✔ roles assigned (1 central superadmin user, 1 tenant superadmin user per tenant)${COLORS.reset}`
   );
 
+  // ---------------------------------------------------------------------------
   // 10) KEEP CENTRAL SUPERADMIN PERMISSIONS IN SYNC
+  // ---------------------------------------------------------------------------
   section("Syncing central_superadmin permissions");
   await syncCentralSuperAdminPermissions();
   console.log(
     `${COLORS.green}  ✔ central_superadmin permissions synced${COLORS.reset}`
   );
 
+  // ---------------------------------------------------------------------------
   // 11) SUMMARY
+  // ---------------------------------------------------------------------------
   banner("Seed Complete");
 
   console.log(

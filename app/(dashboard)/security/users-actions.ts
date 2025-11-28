@@ -9,6 +9,7 @@ import {
 import React from "react";
 import { auth } from "@/lib/auth";
 import { getCurrentSession } from "@/lib/auth-server";
+import { getCurrentUserPermissions } from "@/lib/rbac";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/send-email";
@@ -58,10 +59,14 @@ async function getTenantMeta(tenantId?: string | null) {
  * Auth helper
  * ------------------------------------------------------------------ */
 
-async function authorizeUserAction(tenantId: string | null | undefined) {
+async function authorizeUserAction(
+  tenantId: string | null | undefined,
+  requiredPermissions: string[]
+) {
   const { user } = await getCurrentSession();
   if (!user?.id) throw new Error("UNAUTHORIZED");
 
+  // --- Context / membership guard ---
   if (tenantId) {
     const membership = await prisma.userTenant.findUnique({
       where: { userId_tenantId: { userId: user.id, tenantId } },
@@ -84,6 +89,21 @@ async function authorizeUserAction(tenantId: string | null | undefined) {
     }
   }
 
+  // --- Fine-grained permission guard ---
+  const perms = await getCurrentUserPermissions(tenantId ?? null);
+
+  const hasRequired = requiredPermissions.some(
+    (key) =>
+      perms.includes(key) ||
+      // legacy / super switches
+      perms.includes("manage_users") ||
+      perms.includes("manage_security")
+  );
+
+  if (!hasRequired) {
+    throw new Error("FORBIDDEN_INSUFFICIENT_PERMISSIONS");
+  }
+
   return { actorId: user.id };
 }
 
@@ -100,8 +120,11 @@ export async function createOrUpdateUserAction(rawData: unknown) {
   }
   const input = parsed.data;
 
-  // Guard
-  await authorizeUserAction(input.tenantId ?? null);
+  // Guard: create vs update
+  await authorizeUserAction(
+    input.tenantId ?? null,
+    input.id ? ["users.update"] : ["users.create"]
+  );
 
   // Role validation
   const role = await prisma.role.findUnique({ where: { id: input.roleId } });
@@ -294,7 +317,8 @@ export async function deleteUserAction(input: {
   tenantId?: string | null;
 }) {
   const tenantId = input.tenantId ?? null;
-  const { actorId } = await authorizeUserAction(tenantId);
+  const { actorId } = await authorizeUserAction(tenantId, ["users.delete"]);
+
   if (input.userId === actorId) throw new Error("CANNOT_DELETE_SELF");
 
   if (!tenantId) {
@@ -323,7 +347,9 @@ export async function deleteUserAction(input: {
     return;
   }
 
-  const tenantUsersCount = await prisma.userTenant.count({ where: { tenantId } });
+  const tenantUsersCount = await prisma.userTenant.count({
+    where: { tenantId },
+  });
   if (tenantUsersCount <= 1) throw new Error("CANNOT_DELETE_LAST_USER");
 
   await prisma.userTenant.delete({
@@ -355,7 +381,10 @@ export async function toggleUserActiveAction(input: {
   tenantId?: string | null;
 }) {
   const tenantId = input.tenantId ?? null;
-  const { actorId } = await authorizeUserAction(tenantId);
+
+  // treat active/deactive as "update user" permission
+  const { actorId } = await authorizeUserAction(tenantId, ["users.update"]);
+
   if (input.userId === actorId && !input.newActive) {
     throw new Error("CANNOT_DEACTIVATE_SELF");
   }
@@ -390,7 +419,9 @@ export async function toggleUserActiveAction(input: {
   });
 
   const status = input.newActive ? "ACTIVE" : "INACTIVE";
-  const kind = input.newActive ? ("updated" as const) : ("deactivated" as const);
+  const kind = input.newActive
+    ? ("updated" as const)
+    : ("deactivated" as const);
   const { tenantName, tenantDomain, loginUrl } = await getTenantMeta(tenantId);
 
   await sendEmail({

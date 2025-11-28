@@ -26,7 +26,7 @@ type SidebarProps = {
 };
 
 const navItems = [
-  { label: "Dashboard", href: "/", icon: LayoutDashboard },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Tenants", href: "/tenants", icon: Building2 },
   { label: "Security", href: "/security", icon: ShieldCheck },
   { label: "Files", href: "/files", icon: Folder },

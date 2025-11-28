@@ -145,6 +145,56 @@ function getSafeFilteredRows<T>(table: TanTable<T>) {
   return filtered?.rows?.length ? filtered.rows : table.getRowModel().rows;
 }
 
+function toClipboardTable<T>(table: TanTable<T>, rows?: Row<T>[]) {
+  const cols = getExportableColumns(table);
+  const dataRows = rows ?? getSafeFilteredRows(table);
+
+  const header = [
+    "No.",
+    ...cols.map((c) =>
+      typeof c.columnDef.header === "string" ? c.columnDef.header : c.id
+    ),
+  ].join("\t");
+
+  const lines = dataRows.map((r, rowIndex) =>
+    [
+      String(rowIndex + 1),
+      ...cols.map((c) => {
+        const meta = (c.columnDef.meta || {}) as any;
+
+        const raw =
+          typeof meta.exportValue === "function"
+            ? meta.exportValue(r.original)
+            : r.getValue<any>(c.id);
+
+        if (raw == null) return "";
+        return typeof raw === "object" ? JSON.stringify(raw) : String(raw);
+      }),
+    ].join("\t")
+  );
+
+  return [header, ...lines].join("\n");
+}
+
+async function copyTableToClipboard<T>(table: TanTable<T>, rows?: Row<T>[]) {
+  try {
+    const text = toClipboardTable(table, rows);
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    toast.success("Data copied to clipboard");
+  } catch {
+    toast.error("Copy failed");
+  }
+}
+
 /* ---------------------------- Export helpers ---------------------------- */
 function toCsv<T>(table: TanTable<T>, rows?: Row<T>[]) {
   const cols = getExportableColumns(table);
@@ -172,8 +222,8 @@ function toCsv<T>(table: TanTable<T>, rows?: Row<T>[]) {
           raw == null
             ? ""
             : typeof raw === "object"
-            ? JSON.stringify(raw)
-            : String(raw);
+              ? JSON.stringify(raw)
+              : String(raw);
 
         return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
       }),
@@ -249,8 +299,8 @@ async function exportXlsx<T>(
         return raw == null
           ? ""
           : typeof raw === "object"
-          ? JSON.stringify(raw)
-          : String(raw);
+            ? JSON.stringify(raw)
+            : String(raw);
       }),
     ]);
 
@@ -272,8 +322,7 @@ async function exportPdf<T>(
 ) {
   try {
     const jsPDFmod = await import("jspdf");
-    const JsPDFCtor: any =
-      (jsPDFmod as any).default || (jsPDFmod as any).jsPDF;
+    const JsPDFCtor: any = (jsPDFmod as any).default || (jsPDFmod as any).jsPDF;
     const autoTableMod: any = await import("jspdf-autotable");
     const autoTableFn: any = autoTableMod.default || (autoTableMod as any);
 
@@ -308,14 +357,29 @@ async function exportPdf<T>(
     doc.setFontSize(12);
     doc.text(fileName.toUpperCase(), 14, 18);
 
+    // 👇 NEW: control widths so table never runs off the page
+    const headerRow = head[0] as string[];
+    const columnStyles: Record<number, any> = {};
+
+    headerRow.forEach((label, idx) => {
+      if (label === "No.") {
+        columnStyles[idx] = { cellWidth: 10 }; // tiny
+      }
+      if (label === "Permissions") {
+        // keep permissions at a fixed width so it wraps
+        columnStyles[idx] = { cellWidth: 80 };
+      }
+    });
+
     autoTableFn(doc, {
       head,
       body,
       styles: {
         fontSize: 8.5,
-        cellPadding: 3.5,
-        valign: "middle",
-        overflow: "hidden",
+        cellPadding: 3,
+        valign: "top",
+        overflow: "linebreak", // wrap text
+        cellWidth: "wrap",
       },
       headStyles: {
         fontSize: 9,
@@ -325,6 +389,8 @@ async function exportPdf<T>(
       },
       alternateRowStyles: { fillColor: [250, 250, 250] },
       margin: { top: 20, left: 12, right: 12, bottom: 12 },
+      tableWidth: "auto", // let jspdf-autotable respect columnStyles
+      columnStyles, // ⬅️ apply constrained widths
     });
 
     doc.save(`${fileName}.pdf`);
@@ -334,19 +400,14 @@ async function exportPdf<T>(
   }
 }
 
-function printTable<T>(
-  table: TanTable<T>,
-  title = "Table",
-  rows?: Row<T>[]
-) {
+function printTable<T>(table: TanTable<T>, title = "Table", rows?: Row<T>[]) {
   const cols = getPrintableColumns(table);
   const dataRows = rows ?? getSafeFilteredRows(table);
   if (!dataRows.length) return;
 
   const thStyle =
     'style="text-align:left;padding:8px;border-bottom:1px solid #ddd"';
-  const tdStyle =
-    'style="padding:6px 8px;border-bottom:1px solid #f2f2f2"';
+  const tdStyle = 'style="padding:6px 8px;border-bottom:1px solid #f2f2f2"';
 
   const th =
     `<th ${thStyle}>No.</th>` +
@@ -373,8 +434,8 @@ function printTable<T>(
             raw == null
               ? ""
               : typeof raw === "object"
-              ? JSON.stringify(raw)
-              : String(raw);
+                ? JSON.stringify(raw)
+                : String(raw);
           return `<td ${tdStyle}>${s}</td>`;
         })
         .join("");
@@ -460,8 +521,9 @@ export function DataTable<TData, TValue>({
   dateFilterColumnId,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] =
-    React.useState<ColumnFiltersState>([]);
+  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
+    []
+  );
   const [columnVisibility, setColumnVisibility] =
     React.useState<VisibilityState>({});
   const [rowSelection, setRowSelection] = React.useState({});
@@ -493,8 +555,8 @@ export function DataTable<TData, TValue>({
         raw instanceof Date
           ? raw
           : typeof raw === "string" || typeof raw === "number"
-          ? new Date(raw)
-          : null;
+            ? new Date(raw)
+            : null;
       if (!d) return false;
       const t = d.getTime();
       if (Number.isNaN(t)) return false;
@@ -725,9 +787,7 @@ export function DataTable<TData, TValue>({
           <DataTableCardHeader>
             {title && <DataTableCardTitle>{title}</DataTableCardTitle>}
             {description && (
-              <DataTableCardDescription>
-                {description}
-              </DataTableCardDescription>
+              <DataTableCardDescription>{description}</DataTableCardDescription>
             )}
           </DataTableCardHeader>
         )}
@@ -815,9 +875,8 @@ export function DataTable<TData, TValue>({
                           {current && (
                             <span className="ml-1 rounded-sm bg-primary/10 px-1 py-0.5 text-xs font-normal text-primary">
                               {
-                                filter.options.find(
-                                  (o) => o.value === current
-                                )?.label
+                                filter.options.find((o) => o.value === current)
+                                  ?.label
                               }
                             </span>
                           )}
@@ -828,9 +887,7 @@ export function DataTable<TData, TValue>({
                         <DropdownMenuSeparator />
                         <DropdownMenuCheckboxItem
                           checked={!current}
-                          onCheckedChange={() =>
-                            col?.setFilterValue(undefined)
-                          }
+                          onCheckedChange={() => col?.setFilterValue(undefined)}
                         >
                           All
                         </DropdownMenuCheckboxItem>
@@ -867,6 +924,7 @@ export function DataTable<TData, TValue>({
           </div>
 
           {/* Right: actions */}
+
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -891,21 +949,29 @@ export function DataTable<TData, TValue>({
                   <span className="hidden sm:inline">Columns</span>
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+
                 {table
                   .getAllLeafColumns()
-                  .filter((c) => c.getCanHide())
-                  .map((c) => (
+                  .filter(
+                    (column) =>
+                      column.getCanHide() &&
+                      !["seq", "select"].includes(column.id)
+                  )
+                  .map((column) => (
                     <DropdownMenuCheckboxItem
-                      key={c.id}
-                      checked={c.getIsVisible()}
-                      onCheckedChange={(v) => c.toggleVisibility(!!v)}
+                      key={column.id}
+                      checked={column.getIsVisible()}
+                      onCheckedChange={(value) =>
+                        column.toggleVisibility(!!value)
+                      }
+                      className="capitalize"
                     >
-                      {typeof c.columnDef.header === "string"
-                        ? c.columnDef.header
-                        : c.id}
+                      {typeof column.columnDef.header === "string"
+                        ? column.columnDef.header
+                        : column.id}
                     </DropdownMenuCheckboxItem>
                   ))}
               </DropdownMenuContent>
@@ -915,10 +981,20 @@ export function DataTable<TData, TValue>({
             <Button
               variant="outline"
               className="h-9 gap-2"
-              onClick={() => withBusy(() => copyCsv(table))}
+              onClick={() => withBusy(() => copyTableToClipboard(table))}
             >
               <Copy className="h-4 w-4" />
               <span className="hidden sm:inline">Copy</span>
+            </Button>
+
+            {/* NEW: GLOBAL PRINT (all filtered rows) */}
+            <Button
+              variant="outline"
+              className="h-9 gap-2"
+              onClick={() => withBusy(() => printTable(table, fileName))}
+            >
+              <Printer className="h-4 w-4" />
+              <span className="hidden sm:inline">Print</span>
             </Button>
 
             <DropdownMenu>
@@ -960,10 +1036,7 @@ export function DataTable<TData, TValue>({
           <Table>
             <TableHeader className="bg-muted/30">
               {table.getHeaderGroups().map((hg) => (
-                <TableRow
-                  key={hg.id}
-                  className="border-b hover:bg-transparent"
-                >
+                <TableRow key={hg.id} className="border-b hover:bg-transparent">
                   {hg.headers.map((h) => (
                     <TableHead
                       key={h.id}
@@ -1000,8 +1073,8 @@ export function DataTable<TData, TValue>({
                         {h.column.getIsSorted() === "asc"
                           ? " ▲"
                           : h.column.getIsSorted() === "desc"
-                          ? " ▼"
-                          : null}
+                            ? " ▼"
+                            : null}
                       </div>
                     </TableHead>
                   ))}
@@ -1159,7 +1232,9 @@ export function DataTable<TData, TValue>({
                 size="sm"
                 variant="ghost"
                 className="h-8 rounded-full px-3 text-white hover:bg-white/20 dark:text-black dark:hover:bg-black/10"
-                onClick={() => withBusy(() => copyCsv(table, selectedRows))}
+                onClick={() =>
+                  withBusy(() => copyTableToClipboard(table, selectedRows))
+                }
               >
                 <Copy className="mr-2 h-3.5 w-3.5" />
                 Copy
@@ -1180,27 +1255,21 @@ export function DataTable<TData, TValue>({
                 <DropdownMenuContent align="center">
                   <DropdownMenuItem
                     onClick={() =>
-                      withBusy(() =>
-                        downloadCsv(table, fileName, selectedRows)
-                      )
+                      withBusy(() => downloadCsv(table, fileName, selectedRows))
                     }
                   >
                     CSV
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() =>
-                      withBusy(() =>
-                        exportXlsx(table, fileName, selectedRows)
-                      )
+                      withBusy(() => exportXlsx(table, fileName, selectedRows))
                     }
                   >
                     XLSX
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() =>
-                      withBusy(() =>
-                        exportPdf(table, fileName, selectedRows)
-                      )
+                      withBusy(() => exportPdf(table, fileName, selectedRows))
                     }
                   >
                     PDF

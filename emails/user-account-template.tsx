@@ -158,6 +158,13 @@ export const UserAccountEmail = ({
 
             <Text style={styles.contentText}>{intro}</Text>
 
+            {tenantName && (
+  <Text style={styles.contentText}>
+    Tenant / workspace:{" "}
+    <span style={styles.tenantNameBadge}>{displayTenant}</span>
+  </Text>
+)}
+
             {/* STATUS + ROLE */}
             <Row style={{ marginTop: 8, marginBottom: 4 }}>
               <Column>
@@ -478,4 +485,15 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 11,
     color: "#9ca3af",
   },
+  tenantNameBadge: {
+  display: "inline-block",
+  padding: "2px 8px",
+  borderRadius: 999,
+  backgroundColor: "#eef2ff",
+  color: "#3730a3",
+  fontSize: 11,
+  fontWeight: 600,
+},
+
 };
+

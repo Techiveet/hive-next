@@ -42,71 +42,109 @@ import { DataTable } from "@/components/data-table";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
+// --- Types ---
 type PermissionWithFlag = {
   id: number;
-  key: string;
   name: string;
+  key: string;
+  tenantId: string | null;
   isGlobal: boolean;
+};
+
+type Props = {
+  permissions: PermissionWithFlag[];
+  tenantId: string | null;
+  permissionsList: string[]; // ⬅️ Prop from Server
 };
 
 export function PermissionsTab({
   permissions,
   tenantId,
-}: {
-  permissions: PermissionWithFlag[];
-  tenantId: string | null;
-}) {
+  permissionsList = [],
+}: Props) {
   const router = useRouter();
   const [isPending, startTransition] = React.useTransition();
 
-  // Modals
+  // 1. STRICT PERMISSIONS
+  const has = (key: string) => permissionsList.includes(key);
+  
+  // ⬇️ ADDED: View Permission
+  const canViewPermissions = has("permissions.view");
+  const canCreatePermissions = has("permissions.create");
+  const canUpdatePermissions = has("permissions.update");
+  const canDeletePermissions = has("permissions.delete");
+
+  // --- State ---
   const [createOpen, setCreateOpen] = React.useState(false);
   const [viewOpen, setViewOpen] = React.useState(false);
+  const [viewPerm, setViewPerm] = React.useState<PermissionWithFlag | null>(null);
 
-  // Data
-  const [viewPerm, setViewPerm] =
-    React.useState<PermissionWithFlag | null>(null);
   const [form, setForm] = React.useState<{
     id: number | null;
     name: string;
     key: string;
   }>({ id: null, name: "", key: "" });
 
-  function openCreate() {
+  // ---------------------------
+  // helpers
+  // ---------------------------
+
+  const openCreate = React.useCallback(() => {
+    if (!canCreatePermissions) return;
     setForm({ id: null, name: "", key: "" });
     setCreateOpen(true);
-  }
+  }, [canCreatePermissions]);
 
-  function openEdit(p: PermissionWithFlag) {
-    // tenant cannot edit global/system permissions
-    if (tenantId && p.isGlobal) return;
-    setForm({ id: p.id, name: p.name, key: p.key });
-    setCreateOpen(true);
-  }
+  const openEdit = React.useCallback(
+    (p: PermissionWithFlag) => {
+      if (!canUpdatePermissions) return;
+      
+      if (tenantId && p.isGlobal) {
+        toast.error("Cannot edit system permissions.");
+        return;
+      }
+      setForm({ id: p.id, name: p.name, key: p.key });
+      setCreateOpen(true);
+    },
+    [canUpdatePermissions, tenantId]
+  );
 
-  function openView(p: PermissionWithFlag) {
+  const openView = React.useCallback((p: PermissionWithFlag) => {
+    // ⬇️ ADDED: Guard clause for view
+    if (!canViewPermissions) return;
     setViewPerm(p);
     setViewOpen(true);
-  }
+  }, [canViewPermissions]);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    startTransition(async () => {
-      try {
-        await upsertPermissionAction({ ...form, tenantId });
-        toast.success(form.id ? "Permission updated" : "Permission created");
-        setCreateOpen(false);
-        router.refresh();
-      } catch (e: any) {
-        toast.error(e.message || "Error saving permission");
-      }
-    });
-  }
+  const handleSubmit = React.useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
 
-  /* -------------------- TABLE COLUMNS (with select + export) -------------------- */
+      const isEdit = !!form.id;
+
+      if (isEdit && !canUpdatePermissions) return;
+      if (!isEdit && !canCreatePermissions) return;
+
+      startTransition(async () => {
+        try {
+          await upsertPermissionAction({ ...form, tenantId });
+          toast.success(isEdit ? "Permission updated" : "Permission created");
+          setCreateOpen(false);
+          router.refresh();
+        } catch (e: any) {
+          toast.error(e?.message || "Error saving permission");
+        }
+      });
+    },
+    [form, tenantId, canCreatePermissions, canUpdatePermissions, router]
+  );
+
+  // ---------------------------
+  // table columns
+  // ---------------------------
+
   const columns = React.useMemo<ColumnDef<PermissionWithFlag>[]>(
     () => [
-      // Select column so the FAB copy/export/delete works
       {
         id: "select",
         header: ({ table }) => (
@@ -119,6 +157,7 @@ export function PermissionsTab({
               onCheckedChange={(val) =>
                 table.toggleAllPageRowsSelected(!!val)
               }
+              disabled={!canDeletePermissions}
             />
           </div>
         ),
@@ -127,10 +166,10 @@ export function PermissionsTab({
             <Checkbox
               checked={row.getIsSelected()}
               onCheckedChange={(val) => row.toggleSelected(!!val)}
+              disabled={!canDeletePermissions}
             />
           </div>
         ),
-        meta: { align: "center", exportable: false, printable: false },
       },
       {
         accessorKey: "name",
@@ -145,121 +184,148 @@ export function PermissionsTab({
             <span className="font-medium text-sm">{row.original.name}</span>
           </div>
         ),
-        meta: {
-          exportValue: (p: PermissionWithFlag) => p.name,
-        },
       },
       {
         accessorKey: "key",
         header: "Key",
         cell: ({ row }) => (
-          <code className="bg-muted px-1 py-0.5 rounded text-[10px]">
+          <code className="bg-muted px-1 py-0.5 rounded text-[10px] font-mono">
             {row.original.key}
           </code>
         ),
-        meta: {
-          exportValue: (p: PermissionWithFlag) => p.key,
-        },
       },
-      {
-        id: "type",
-        header: "Type",
-        cell: ({ row }) =>
-          row.original.isGlobal ? (
-            <Badge variant="secondary" className="text-[10px] font-normal">
-              System
-            </Badge>
-          ) : (
-            <Badge
-              variant="outline"
-              className="text-[10px] font-normal border-indigo-200 text-indigo-700 bg-indigo-50"
-            >
-              Custom
-            </Badge>
-          ),
-        meta: {
-          exportValue: (p: PermissionWithFlag) =>
-            p.isGlobal ? "System" : "Custom",
-        },
-      },
+    {
+  id: "type",
+  header: "Type",
+  // 🔹 This makes it show up correctly in Copy / CSV / XLSX / PDF / Print
+  meta: {
+    exportValue: (row: PermissionWithFlag) =>
+      row.isGlobal ? "System" : "Custom",
+  },
+  cell: ({ row }) =>
+    row.original.isGlobal ? (
+      <Badge variant="secondary" className="text-[10px] font-normal">
+        System
+      </Badge>
+    ) : (
+      <Badge
+        variant="outline"
+        className="text-[10px] font-normal border-indigo-200 text-indigo-700 bg-indigo-50"
+      >
+        Custom
+      </Badge>
+    ),
+},
+
       {
         id: "actions",
         header: () => <div className="text-right">Actions</div>,
         cell: ({ row }) => {
           const p = row.original;
-          const isLocked = tenantId && p.isGlobal;
+          const isSystemLocked = !!tenantId && p.isGlobal;
+          
+          // GATES
+          const viewDisabled = !canViewPermissions; // ⬇️ New Check
+          const editDisabled = isSystemLocked || !canUpdatePermissions;
+          const deleteDisabled = isSystemLocked || !canDeletePermissions;
 
           return (
             <div className="flex justify-end gap-1">
+              
+              {/* 🟢 VIEW BUTTON */}
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-blue-500 hover:bg-blue-50"
                 onClick={() => openView(p)}
+                disabled={viewDisabled} // ⬇️ Disabled if no permission
+                title={viewDisabled ? "No permission" : "View Details"}
               >
-                <Eye className="h-4 w-4" />
+                {viewDisabled ? (
+                  <Lock className="h-4 w-4 opacity-50" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
               </Button>
 
-              {isLocked ? (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground cursor-not-allowed opacity-50"
-                >
-                  <Lock className="h-4 w-4" />
-                </Button>
-              ) : (
-                <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-amber-500 hover:bg-amber-50"
+                onClick={() => openEdit(p)}
+                disabled={editDisabled}
+                title={editDisabled ? "Cannot edit" : "Edit"}
+              >
+                {editDisabled ? (
+                  <Lock className="h-4 w-4 opacity-50" />
+                ) : (
+                  <Pencil className="h-4 w-4" />
+                )}
+              </Button>
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 text-amber-500 hover:bg-amber-50"
-                    onClick={() => openEdit(p)}
+                    className="h-8 w-8 text-red-500 hover:bg-red-50"
+                    disabled={deleteDisabled}
+                    title={deleteDisabled ? "Cannot delete" : "Delete"}
                   >
-                    <Pencil className="h-4 w-4" />
+                    {deleteDisabled ? (
+                      <Lock className="h-4 w-4 opacity-50" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
                   </Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-red-500 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Delete Permission?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          This may break features if roles depend on it.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                          className="bg-red-600"
-                          onClick={() =>
-                            startTransition(async () => {
-                              await deletePermissionAction(p.id, tenantId);
-                              router.refresh();
-                            })
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete Permission?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This action cannot be undone. It may break features if roles depend on it.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                      onClick={() =>
+                        startTransition(async () => {
+                          try {
+                            await deletePermissionAction(p.id, tenantId);
+                            router.refresh();
+                            toast.success("Permission deleted");
+                          } catch (e: any) {
+                            toast.error(
+                              e?.message ||
+                                `Failed to delete "${p.name}" permission.`
+                            );
                           }
-                        >
-                          Delete
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                </>
-              )}
+                        })
+                      }
+                    >
+                      Delete
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           );
         },
-        meta: { align: "right", exportable: false, printable: false },
       },
     ],
-    [tenantId, router, startTransition]
+    // ⬇️ Added dependency
+    [
+      tenantId,
+      canUpdatePermissions,
+      canDeletePermissions,
+      canViewPermissions, 
+      openEdit,
+      openView,
+      startTransition,
+      router,
+    ]
   );
 
   return (
@@ -271,12 +337,16 @@ export function PermissionsTab({
             Fine-grained access controls.
           </p>
         </div>
-        <Button
-          onClick={openCreate}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
-        >
-          <PlusCircle className="mr-2 h-4 w-4" /> Add Permission
-        </Button>
+        
+        {/* 🔒 CREATE GATE */}
+        {canCreatePermissions && (
+          <Button
+            onClick={openCreate}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+          >
+            <PlusCircle className="mr-2 h-4 w-4" /> Add Permission
+          </Button>
+        )}
       </div>
 
       <div className="rounded-md border bg-card">
@@ -287,38 +357,29 @@ export function PermissionsTab({
           searchPlaceholder="Filter permissions..."
           onRefresh={() => router.refresh()}
           onDeleteRows={async (rows) => {
-            if (!rows.length) return;
-
+            if (!canDeletePermissions) {
+              toast.error("You do not have permission to delete permissions.");
+              return;
+            }
+            // ... (rest of delete logic unchanged)
             let errors = 0;
-
             await Promise.all(
-              rows.map(async (p) => {
+              rows.map(async (p: any) => {
                 try {
                   await deletePermissionAction(p.id, tenantId);
                 } catch (e: any) {
                   errors++;
-                  toast.error(
-                    e?.message || `Failed to delete "${p.name}" permission.`
-                  );
                 }
               })
             );
-
             router.refresh();
-
-            if (errors === 0)
-              toast.success("Selected permissions deleted successfully.");
-            else if (errors === rows.length)
-              toast.error("Failed to delete selected permissions.");
-            else
-              toast.warning(
-                "Some permissions could not be deleted. Check the errors."
-              );
+            if (errors === 0) toast.success("Selected permissions deleted.");
+            else toast.warning("Some permissions could not be deleted.");
           }}
         />
       </div>
 
-      {/* CREATE/EDIT */}
+      {/* CREATE / EDIT */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader>
@@ -338,7 +399,7 @@ export function PermissionsTab({
                 className="w-full border rounded p-2 text-sm"
                 value={form.name}
                 onChange={(e) =>
-                  setForm({ ...form, name: e.target.value })
+                  setForm((prev) => ({ ...prev, name: e.target.value }))
                 }
                 required
                 placeholder="e.g. Delete Reports"
@@ -352,7 +413,7 @@ export function PermissionsTab({
                 className="w-full border rounded p-2 text-sm font-mono"
                 value={form.key}
                 onChange={(e) =>
-                  setForm({ ...form, key: e.target.value })
+                  setForm((prev) => ({ ...prev, key: e.target.value }))
                 }
                 required
                 placeholder="e.g. delete_reports"

@@ -1,86 +1,109 @@
 // lib/permissions.ts
 
-import { RoleScope } from "@prisma/client";
 import { getCurrentSession } from "@/lib/auth-server";
 import { getTenantAndUser } from "@/lib/get-tenant-and-user";
 import { prisma } from "@/lib/prisma";
 
-export async function getCurrentUserPermissions(): Promise<string[]> {
+/**
+ * Get all permission keys for the current user.
+ *
+ * - Always includes CENTRAL (tenantId = null) roles.
+ * - Additionally includes roles for the CURRENT tenant.
+ * - The tenant can be passed explicitly (tenantIdOverride) or
+ *   auto-resolved via `getTenantAndUser()`.
+ */
+export async function getCurrentUserPermissions(
+  tenantIdOverride?: string | null
+): Promise<string[]> {
   const { user } = await getCurrentSession();
   if (!user) return [];
 
-  const { tenant } = await getTenantAndUser();
-  const currentTenantId = tenant?.id ?? null;
+  // --------------------------------------------------
+  // 1) Resolve tenant context
+  // --------------------------------------------------
+  let tenantId: string | null = null;
+  let tenantSlug: string | undefined;
 
-  // 1) Get all roles for this user (central + tenant)
+  if (typeof tenantIdOverride !== "undefined") {
+    // Explicit tenant id provided by caller (e.g. DashboardLayout)
+    tenantId = tenantIdOverride ?? null;
+
+    if (tenantId) {
+      const t = await prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { slug: true },
+      });
+      tenantSlug = t?.slug;
+    }
+  } else {
+    // Fallback: use your existing helper (host → tenant)
+    const { tenant } = await getTenantAndUser();
+    tenantId = tenant?.id ?? null;
+    tenantSlug = tenant?.slug;
+  }
+
+  // --------------------------------------------------
+  // 2) Fetch CENTRAL + TENANT roles for this user
+  // --------------------------------------------------
   const userRoles = await prisma.userRole.findMany({
-    where: { userId: user.id },
+    where: {
+      userId: user.id,
+      OR: [
+        { tenantId: null }, // central roles
+        ...(tenantId ? [{ tenantId }] : []), // current tenant roles
+      ],
+    },
     include: {
-      role: true, // we only need scope + key from Role
+      role: {
+        include: {
+          permissions: {
+            include: { permission: true }, // rolePermission → permission
+          },
+        },
+      },
     },
   });
 
-  // 2) Keep:
-  //    - all CENTRAL roles
-  //    - TENANT roles only for the current tenant
-  const relevantRoles = userRoles.filter((ur) => {
-    const role = ur.role;
-
-    if (role.scope === RoleScope.CENTRAL) {
-      return true;
-    }
-
-    if (role.scope === RoleScope.TENANT && currentTenantId) {
-      return ur.tenantId === currentTenantId;
-    }
-
-    return false;
-  });
-
-  if (!relevantRoles.length) {
+  if (!userRoles.length) {
     if (process.env.NODE_ENV !== "production") {
-      console.log(
-        "[getCurrentUserPermissions] user:",
-        user.email,
-        "tenant:",
-        tenant?.slug ?? "GLOBAL",
-        "→ no relevant roles"
-      );
+      console.log("[permissions] No userRoles found", {
+        email: user.email,
+        tenantId,
+        tenantSlug: tenantSlug ?? "GLOBAL",
+      });
     }
     return [];
   }
 
-  // 3) Fetch rolePermission rows for those roles
-  const roleIds = relevantRoles.map((ur) => ur.roleId);
+  // --------------------------------------------------
+  // 3) Collect distinct permission keys
+  // --------------------------------------------------
+  const keysSet = new Set<string>();
 
-  const rolePermissions = await prisma.rolePermission.findMany({
-    where: { roleId: { in: roleIds } },
-    select: { permissionId: true },
-  });
+  for (const ur of userRoles) {
+    for (const rp of ur.role.permissions) {
+      if (rp.permission?.key) {
+        keysSet.add(rp.permission.key);
+      }
+    }
+  }
 
-  if (!rolePermissions.length) return [];
-
-  const permissionIds = Array.from(
-    new Set(rolePermissions.map((rp) => rp.permissionId))
-  );
-
-  // 4) Load the actual permissions and return their keys
-  const permissions = await prisma.permission.findMany({
-    where: { id: { in: permissionIds } },
-    select: { key: true },
-  });
-
-  const keys = permissions.map((p) => p.key);
+  const keys = Array.from(keysSet);
 
   if (process.env.NODE_ENV !== "production") {
-    console.log(
-      "[getCurrentUserPermissions] user:",
-      user.email,
-      "tenant:",
-      tenant?.slug ?? "GLOBAL",
-      "perms:",
-      keys
-    );
+    console.log("[permissions] Resolved permission keys", {
+      email: user.email,
+      tenantId,
+      tenantSlug: tenantSlug ?? "GLOBAL",
+      roles: userRoles.map((ur) => ({
+        roleId: ur.roleId,
+        roleKey: ur.role.key,
+        userRoleTenantId: ur.tenantId,
+        roleTenantId: ur.role.tenantId,
+      })),
+      permissionCount: keys.length,
+      permissions: keys,
+    });
   }
 
   return keys;
