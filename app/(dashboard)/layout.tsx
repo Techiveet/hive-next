@@ -1,37 +1,44 @@
+// app/(dashboard)/security/layout.tsx
+
 import { DashboardShell } from "@/components/dashboard-shell";
+import { FileManagerEventListener } from "@/components/file-manager/file-manager-event-listener";
+import type { Metadata } from "next";
 import { PermissionsProvider } from "@/components/providers/permissions-provider";
-import type { ReactNode } from "react";
 import { getCurrentSession } from "@/lib/auth-server";
 import { getCurrentUserPermissions } from "@/lib/permissions";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Dashboard | Hive",
-};
-
-// Resolve tenant from the current host (test.localhost etc.)
-async function resolveCurrentTenantId() {
+// 🔹 Use SAME tenant resolution logic as SignIn
+async function resolveTenantIdFromHost(): Promise<string | null> {
   const h = await headers();
-  const host = (h.get("host") || "").toLowerCase(); // e.g. "test.localhost:3000"
-  const bareHost = host.split(":")[0]; // -> "test.localhost"
+  const host = (h.get("host") || "").toLowerCase();
+  const bareHost = host.split(":")[0];
 
-  if (!bareHost) return null;
+  let tenantId: string | null = null;
 
-  // tenantDomain.domain should be like "test.localhost"
-  const domain = await prisma.tenantDomain.findFirst({
-    where: { domain: bareHost },
-    select: { tenantId: true },
-  });
+  if (bareHost === "localhost") {
+    const centralTenant = await prisma.tenant.findUnique({
+      where: { slug: "central-hive" },
+      select: { id: true },
+    });
+    tenantId = centralTenant?.id ?? null;
+  } else {
+    const domain = await prisma.tenantDomain.findFirst({
+      where: { domain: bareHost },
+      select: { tenantId: true },
+    });
+    tenantId = domain?.tenantId ?? null;
+  }
 
-  return domain?.tenantId ?? null;
+  return tenantId;
 }
 
 export default async function DashboardLayout({
   children,
 }: {
-  children: ReactNode;
+  children: React.ReactNode;
 }) {
   const { user } = await getCurrentSession();
 
@@ -39,8 +46,22 @@ export default async function DashboardLayout({
     redirect("/sign-in?callbackURL=/dashboard");
   }
 
-  const tenantId = await resolveCurrentTenantId();
+  // 👇 Same tenantId as SignIn now
+  const tenantId = await resolveTenantIdFromHost();
+
   const permissions = await getCurrentUserPermissions(tenantId);
+
+  // Load brand for THIS tenant
+  let brand = await prisma.brandSettings.findFirst({
+    where: { tenantId },
+  });
+
+  // Optional: fallback to central brand (tenantId = null) if nothing found
+  if (!brand) {
+    brand = await prisma.brandSettings.findFirst({
+      where: { tenantId: null },
+    });
+  }
 
   if (!permissions || permissions.length === 0) {
     if (process.env.NODE_ENV !== "production") {
@@ -58,9 +79,18 @@ export default async function DashboardLayout({
 
   return (
     <PermissionsProvider permissions={permissions}>
+      {/* Global “Choose from File Manager” listener */}
+      <FileManagerEventListener />
+
       <DashboardShell
         user={{ name: user.name ?? null, email: user.email }}
         permissions={permissions}
+        brand={{
+          titleText: brand?.titleText ?? null,
+          logoLightUrl: brand?.logoLightUrl ?? null,
+          logoDarkUrl: brand?.logoDarkUrl ?? null,
+          faviconUrl: brand?.faviconUrl ?? null,
+        }}
       >
         {children}
       </DashboardShell>

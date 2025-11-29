@@ -1,13 +1,9 @@
-import type { Metadata } from "next";
-import { SignInClient } from "./sign-in-client";
+// lib/brand-server.ts
+
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
-export const metadata: Metadata = {
-  title: "Sign In", // becomes "Sign In | <brand title>" via template
-};
-
-async function getBrandSettings() {
+export async function getBrandForRequest() {
   const h = await headers();
   const host = (h.get("host") || "").toLowerCase();
   const bareHost = host.split(":")[0];
@@ -33,19 +29,4 @@ async function getBrandSettings() {
   });
 
   return brand;
-}
-
-export default async function SignInPage() {
-  const brand = await getBrandSettings();
-
-  return (
-    <SignInClient
-      brand={{
-        titleText: brand?.titleText,
-        logoLightUrl: brand?.logoLightUrl,
-        logoDarkUrl: brand?.logoDarkUrl,
-        faviconUrl: brand?.faviconUrl,
-      }}
-    />
-  );
 }

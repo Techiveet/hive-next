@@ -1,14 +1,29 @@
 // app/layout.tsx
 import "./globals.css";
 
-import { AppToaster } from "@/components/ui/sonner";
 import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
+import { getBrandForRequest } from "@/lib/brand-server";
 
-export const metadata: Metadata = {
-  title: "Hive",
-  description: "Multi-tenant hive dashboard",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const brand = await getBrandForRequest();
+  const appTitle = brand?.titleText?.trim() || "Hive";
+
+  return {
+    title: {
+      default: appTitle,
+      template: `%s | ${appTitle}`,
+    },
+    icons: brand?.faviconUrl
+      ? {
+          icon: [
+            { url: brand.faviconUrl, rel: "icon" },
+            { url: brand.faviconUrl, rel: "shortcut icon" },
+          ],
+        }
+      : undefined,
+  };
+}
 
 export default function RootLayout({
   children,
@@ -17,10 +32,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="bg-background text-foreground font-sans antialiased">
+      <body className="min-h-screen bg-background text-foreground antialiased">
         <ThemeProvider>
           {children}
-          <AppToaster />
         </ThemeProvider>
       </body>
     </html>

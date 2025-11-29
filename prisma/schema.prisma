@@ -99,16 +99,19 @@ model Tenant {
 
   isActive  Boolean  @default(true) // ✅ activation / deactivation
 
-  users     UserTenant[]
-  userRoles UserRole[]
-  domains   TenantDomain[]
-
-  // file manager relations
+  users       UserTenant[]
+  userRoles   UserRole[]
+  domains     TenantDomain[]
   folders     Folder[]
   files       File[]
   roles       Role[]
   permissions Permission[]
+
+  // NEW: one settings + one branding row per tenant
+  appSettings   AppSettings?
+  brandSettings BrandSettings?
 }
+
 
 model TenantDomain {
   id        String   @id @default(cuid())
@@ -254,4 +257,43 @@ model FileManagerSettings {
   autoEmptyRecycleBinDays   Int     @default(30)
   requireDeleteConfirmation Boolean @default(true)
   allowPublicSharing        Boolean @default(false)
+}
+
+model AppSettings {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  timezone               String   @default("UTC")
+  locale                 String   @default("en")
+  dateFormat             String   @default("yyyy-MM-dd")
+  timeFormat             String   @default("HH:mm")
+  weekStartsOn           Int      @default(1)        // 1 = Monday
+  defaultTheme           String   @default("system") // "light" | "dark" | "system"
+  allowUserThemeOverride Boolean  @default(true)
+  enforceTwoFactor       Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // one row per tenant (plus optional central row with tenantId = null)
+  @@unique([tenantId])
+}
+
+model BrandSettings {
+  id           String  @id @default(cuid())
+  
+  // Link to tenant (optional). If null, it applies to the Central Platform.
+  tenantId     String? @unique
+  tenant       Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  titleText    String  @default("Hive")
+  footerText   String  @default("Powered by Hive")
+  
+   logoLightUrl String? @db.LongText
+  logoDarkUrl  String? @db.LongText
+  faviconUrl   String? @db.LongText
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
