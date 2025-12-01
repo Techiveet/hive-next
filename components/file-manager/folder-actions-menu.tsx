@@ -1,4 +1,5 @@
 // components/file-manager/folder-actions-menu.tsx
+// components/file-manager/folder-actions-menu.tsx
 "use client";
 
 import {
@@ -37,12 +38,15 @@ type FolderActionsMenuProps = {
   folderId: string;
   folderName: string;
   parentFolderId?: string | null;
+  /** optional custom classes for the trigger button */
+  triggerClassName?: string;
 };
 
 export function FolderActionsMenu({
   folderId,
   folderName,
   parentFolderId = null,
+  triggerClassName,
 }: FolderActionsMenuProps) {
   const [openRename, setOpenRename] = useState(false);
   const [openConfirm, setOpenConfirm] = useState(false);
@@ -116,7 +120,10 @@ export function FolderActionsMenu({
             type="button"
             variant="outline"
             size="icon"
-            className="h-7 w-7 rounded-full border bg-background text-muted-foreground shadow-sm hover:bg-accent"
+            className={
+              triggerClassName ??
+              "h-7 w-7 rounded-full border bg-background text-muted-foreground shadow-sm hover:bg-accent"
+            }
           >
             <MoreHorizontal className="h-3.5 w-3.5" />
           </Button>
