@@ -3,66 +3,9 @@
 import { getCurrentSession } from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
 
-/**
- * Load a user together with all their roles (central + tenant).
- */
-export async function getUserWithRoles(userId: string) {
-  if (!userId) return null;
-
-  return prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      userRoles: {
-        include: {
-          role: true,
-        },
-      },
-    },
-  });
-}
-
-/**
- * Returns true if the user has the central_superadmin role (tenantId = null).
- */
-export function isCentralSuperadmin(
-  user: Awaited<ReturnType<typeof getUserWithRoles>> | null
-): boolean {
-  if (!user) return false;
-
-  return user.userRoles.some(
-    (ur) =>
-      ur.tenantId === null &&
-      ur.role &&
-      ur.role.key === "central_superadmin"
-  );
-}
-
-/**
- * Ensure there is only ONE central_superadmin in the system.
- * Throws if a different user already holds that role.
- */
-export async function assertSingleCentralSuperadmin(userId: string) {
-  const centralRole = await prisma.role.findFirst({
-    where: { key: "central_superadmin", tenantId: null },
-  });
-
-  if (!centralRole) {
-    throw new Error("central_superadmin role not found");
-  }
-
-  const existingHolder = await prisma.userRole.findFirst({
-    where: {
-      roleId: centralRole.id,
-      tenantId: null,
-      userId: { not: userId },
-    },
-    include: { user: true },
-  });
-
-  if (existingHolder) {
-    throw new Error("CENTRAL_SUPERADMIN_ALREADY_ASSIGNED");
-  }
-}
+/* ------------------------------------------------------------------
+ * SYNC HELPERS
+ * ------------------------------------------------------------------ */
 
 /**
  * Ensure the `central_superadmin` role always has *all* permissions.
@@ -186,6 +129,10 @@ export async function syncTenantDefaultRolesPermissions(tenantId: string) {
   );
 }
 
+/* ------------------------------------------------------------------
+ * PERMISSION LIST FOR CURRENT SESSION
+ * ------------------------------------------------------------------ */
+
 /**
  * Returns a flat list of permission keys for the current user.
  * Includes central roles + optional tenant roles.
@@ -266,4 +213,106 @@ export async function userHasPermission(
 ): Promise<boolean> {
   const perms = await getCurrentUserPermissions(tenantId);
   return perms.includes(key);
+}
+
+/* ------------------------------------------------------------------
+ * USER + ROLE HELPERS USED BY ACTIONS
+ * ------------------------------------------------------------------ */
+
+/**
+ * Load a user together with all assigned roles.
+ */
+export async function getUserWithRoles(userId: string) {
+  if (!userId) return null;
+
+  return prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      userRoles: {
+        include: { role: true },
+      },
+    },
+  });
+}
+
+/**
+ * Check if a user is the central_superadmin (tenantId = null).
+ */
+export function isCentralSuperadmin(
+  user: Awaited<ReturnType<typeof getUserWithRoles>> | null
+): boolean {
+  if (!user) return false;
+
+  return user.userRoles.some(
+    (ur) => ur.role?.key === "central_superadmin" && ur.tenantId === null
+  );
+}
+
+/**
+ * Check if a user is tenant_superadmin for a given tenant.
+ */
+export function isTenantSuperadmin(
+  user: Awaited<ReturnType<typeof getUserWithRoles>> | null,
+  tenantId: string
+): boolean {
+  if (!user) return false;
+
+  return user.userRoles.some(
+    (ur) =>
+      ur.role?.key === "tenant_superadmin" && ur.tenantId === tenantId
+  );
+}
+
+/**
+ * Ensure there is only one central_superadmin in the system.
+ * Allows the given userId as the "target" being promoted.
+ */
+export async function assertSingleCentralSuperadmin(targetUserId: string) {
+  const centralRole = await prisma.role.findFirst({
+    where: { key: "central_superadmin", tenantId: null },
+  });
+
+  if (!centralRole) {
+    throw new Error("central_superadmin role missing");
+  }
+
+  const existingHolder = await prisma.userRole.findFirst({
+    where: {
+      roleId: centralRole.id,
+      tenantId: null,
+      userId: { not: targetUserId },
+    },
+  });
+
+  if (existingHolder) {
+    throw new Error("CENTRAL_SUPERADMIN_ALREADY_ASSIGNED");
+  }
+}
+
+/**
+ * Ensure there is only one tenant_superadmin per tenant.
+ */
+export async function assertSingleTenantSuperadmin(
+  targetUserId: string,
+  tenantId: string
+) {
+  const role = await prisma.role.findFirst({
+    where: { key: "tenant_superadmin", tenantId },
+  });
+
+  if (!role) {
+    throw new Error("tenant_superadmin role missing");
+  }
+
+  const existingHolder = await prisma.userRole.findFirst({
+    where: {
+      roleId: role.id,
+      tenantId,
+      userId: { not: targetUserId },
+    },
+  });
+
+  if (existingHolder) {
+    throw new Error("TENANT_SUPERADMIN_ALREADY_ASSIGNED");
+  }
 }
