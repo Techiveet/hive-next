@@ -1,3 +1,4 @@
+// app/(dashboard)/[[tenantSlug]]/users/actions.ts
 "use server";
 
 import {
@@ -9,7 +10,7 @@ import {
 import { getTenantAndUser } from "@/lib/get-tenant-and-user";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
-import { sendAccountEmail } from "@/lib/send-email";
+import { sendAccountEmail } from "@/lib/email";
 
 type TenantUserFormInput = {
   name: string;
@@ -66,8 +67,8 @@ export async function createTenantUser(data: TenantUserFormInput) {
 
   // Assign tenant_superadmin if requested
   if (data.makeTenantSuperadmin) {
-    const role = await prisma.role.findUnique({
-      where: { key: "tenant_superadmin" },
+    const role = await prisma.role.findFirst({
+      where: { key: "tenant_superadmin", tenantId: tenant.id },
     });
     if (!role) throw new Error("tenant_superadmin role missing");
 
@@ -96,7 +97,10 @@ export async function createTenantUser(data: TenantUserFormInput) {
   return { ok: true, userId: user.id };
 }
 
-export async function updateTenantUser(userId: string, data: Partial<TenantUserFormInput>) {
+export async function updateTenantUser(
+  userId: string,
+  data: Partial<TenantUserFormInput>
+) {
   const { user: currentUser, tenant } = await getTenantAndUser();
   const current = await getUserWithRoles(currentUser.id);
   ensureTenantSuperadmin(current, tenant.id);
@@ -111,8 +115,8 @@ export async function updateTenantUser(userId: string, data: Partial<TenantUserF
 
   // manage tenant_superadmin assignment
   if (typeof data.makeTenantSuperadmin === "boolean") {
-    const role = await prisma.role.findUnique({
-      where: { key: "tenant_superadmin" },
+    const role = await prisma.role.findFirst({
+      where: { key: "tenant_superadmin", tenantId: tenant.id },
     });
     if (!role) throw new Error("tenant_superadmin role missing");
 
@@ -156,7 +160,10 @@ export async function updateTenantUser(userId: string, data: Partial<TenantUserF
   return { ok: true };
 }
 
-export async function toggleTenantUserActive(userId: string, isActive: boolean) {
+export async function toggleTenantUserActive(
+  userId: string,
+  isActive: boolean
+) {
   const { user: currentUser, tenant } = await getTenantAndUser();
   const current = await getUserWithRoles(currentUser.id);
   ensureTenantSuperadmin(current, tenant.id);
