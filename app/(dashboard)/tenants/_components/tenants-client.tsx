@@ -1,4 +1,3 @@
-// app/(dashboard)/tenants/_components/tenants-client.tsx
 "use client";
 
 import * as React from "react";
@@ -49,6 +48,8 @@ import {
   type TenantSuperadminInput,
 } from "../tenants-actions";
 
+/* ------------ Types ------------ */
+
 type TenantForClient = {
   id: string;
   name: string;
@@ -59,10 +60,34 @@ type TenantForClient = {
   superadmin: { id: string; name: string | null; email: string } | null;
 };
 
+// keep in sync (shape) with what DataTable expects
+type CompanySettingsForExport = {
+  companyName: string;
+  legalName?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  taxId?: string;
+  registrationNumber?: string;
+};
+
+type BrandingSettingsForExport = {
+  darkLogoUrl?: string | null;
+};
+
 type Props = {
   tenants: TenantForClient[];
   canManageTenants: boolean;
+  companySettings: CompanySettingsForExport | null;
+  brandingSettings?: BrandingSettingsForExport | null;
 };
+
 
 // small helper to generate strong-ish password
 function generateStrongPassword(length = 12) {
@@ -73,7 +98,12 @@ function generateStrongPassword(length = 12) {
   ).join("");
 }
 
-export function TenantsClient({ tenants, canManageTenants }: Props) {
+export function TenantsClient({
+  tenants,
+  canManageTenants,
+  companySettings,
+ brandingSettings,
+}: Props) {
   const router = useRouter();
   const [isPending, startTransition] = React.useTransition();
 
@@ -277,183 +307,182 @@ export function TenantsClient({ tenants, canManageTenants }: Props) {
 
   /* ============ TABLE ============ */
 
- const columns = React.useMemo<ColumnDef<TenantForClient>[]>(
-  () => [
-    {
-      id: "select",
-      header: ({ table }) => (
-        <div className="flex justify-center">
-          <Checkbox
-            checked={
-              table.getIsAllPageRowsSelected() ||
-              (table.getIsSomePageRowsSelected() && "indeterminate")
-            }
-            onCheckedChange={(val) =>
-              table.toggleAllPageRowsSelected(!!val)
-            }
-          />
-        </div>
-      ),
-      cell: ({ row }) => (
-        <div className="flex justify-center">
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(val) => row.toggleSelected(!!val)}
-          />
-        </div>
-      ),
-      meta: { exportable: false, printable: false },
-    },
-
-    // TENANT
-    {
-      id: "name",
-      accessorKey: "name",
-      header: "Tenant",
-      cell: ({ row }) => {
-        const t = row.original;
-        return (
-          <div className="flex flex-col">
-            <span className="text-sm font-medium">{t.name}</span>
-            <span className="text-xs text-muted-foreground">{t.slug}</span>
-          </div>
-        );
-      },
-    },
-
-    // DOMAIN
-    {
-      id: "domain",
-      header: "Domain",
-      accessorFn: (row) => row.domain ?? "", // <-- used for export/print
-      cell: ({ row }) => {
-        const domain = row.original.domain;
-        return domain ? (
-          <div className="flex items-center gap-1 text-xs">
-            <Globe2 className="h-3 w-3 text-muted-foreground" />
-            <span>{domain}</span>
-          </div>
-        ) : (
-          <span className="text-xs text-muted-foreground">—</span>
-        );
-      },
-    },
-
-    // SUPERADMIN
-    {
-      id: "superadmin",
-      header: "Superadmin",
-      accessorFn: (row) =>
-        row.superadmin
-          ? `${row.superadmin.name || ""} (${row.superadmin.email})`.trim()
-          : "", // <-- export value
-      cell: ({ row }) => {
-        const su = row.original.superadmin;
-        if (!su) {
-          return (
-            <span className="text-xs text-muted-foreground">
-              Not assigned
-            </span>
-          );
-        }
-        return (
-          <div className="flex flex-col text-xs">
-            <span className="font-medium flex items-center gap-1">
-              <Shield className="h-3 w-3 text-amber-500" />
-              {su.name || "Unnamed"}
-            </span>
-            <span className="text-muted-foreground">{su.email}</span>
-          </div>
-        );
-      },
-    },
-
-    // STATUS
-    {
-      id: "status",
-      header: "Status",
-      accessorFn: (row) => (row.isActive ? "Active" : "Disabled"), // <-- export
-      cell: ({ row }) => {
-        const t = row.original;
-        return (
-          <div className="flex items-center gap-2">
-            <Switch
-              checked={t.isActive}
-              disabled={!canManageTenants || isPending}
-              onCheckedChange={() => handleToggleActive(t)}
+  const columns = React.useMemo<ColumnDef<TenantForClient>[]>(
+    () => [
+      {
+        id: "select",
+        header: ({ table }) => (
+          <div className="flex justify-center">
+            <Checkbox
+              checked={
+                table.getIsAllPageRowsSelected() ||
+                (table.getIsSomePageRowsSelected() && "indeterminate")
+              }
+              onCheckedChange={(val) =>
+                table.toggleAllPageRowsSelected(!!val)
+              }
             />
-            <Badge
-              variant={t.isActive ? "default" : "secondary"}
-              className="text-[10px]"
-            >
-              {t.isActive ? "Active" : "Disabled"}
-            </Badge>
           </div>
-        );
-      },
-    },
-
-    // CREATED
-    {
-      id: "createdAt",
-      header: "Created",
-      accessorFn: (row) =>
-        new Date(row.createdAt).toLocaleDateString(), // <-- export
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">
-          {new Date(row.original.createdAt).toLocaleDateString()}
-        </span>
-      ),
-    },
-
-    {
-      id: "actions",
-      header: () => <div className="text-right">Actions</div>,
-      cell: ({ row }) => {
-        const t = row.original;
-        return (
-          <div className="flex justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-emerald-600 hover:bg-emerald-50"
-              disabled={!canManageTenants}
-              onClick={() => openSuperadminModal(t)}
-              title="Create / update tenant superadmin"
-            >
-              <UserPlus className="h-4 w-4" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-amber-500 hover:bg-amber-50"
-              disabled={!canManageTenants}
-              onClick={() => openEditTenant(t)}
-              title="Edit tenant"
-            >
-              <Pencil className="h-4 w-4" />
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-red-500 hover:bg-red-50"
-              disabled={!canManageTenants}
-              onClick={() => confirmDeleteTenant(t)}
-              title="Delete tenant"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+        ),
+        cell: ({ row }) => (
+          <div className="flex justify-center">
+            <Checkbox
+              checked={row.getIsSelected()}
+              onCheckedChange={(val) => row.toggleSelected(!!val)}
+            />
           </div>
-        );
+        ),
+        meta: { exportable: false, printable: false },
       },
-      meta: { exportable: false, printable: false },
-    },
-  ],
-  [canManageTenants, isPending]
-);
 
+      // TENANT
+      {
+        id: "name",
+        accessorKey: "name",
+        header: "Tenant",
+        cell: ({ row }) => {
+          const t = row.original;
+          return (
+            <div className="flex flex-col">
+              <span className="text-sm font-medium">{t.name}</span>
+              <span className="text-xs text-muted-foreground">{t.slug}</span>
+            </div>
+          );
+        },
+      },
+
+      // DOMAIN
+      {
+        id: "domain",
+        header: "Domain",
+        accessorFn: (row) => row.domain ?? "",
+        cell: ({ row }) => {
+          const domain = row.original.domain;
+          return domain ? (
+            <div className="flex items-center gap-1 text-xs">
+              <Globe2 className="h-3 w-3 text-muted-foreground" />
+              <span>{domain}</span>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">—</span>
+          );
+        },
+      },
+
+      // SUPERADMIN
+      {
+        id: "superadmin",
+        header: "Superadmin",
+        accessorFn: (row) =>
+          row.superadmin
+            ? `${row.superadmin.name || ""} (${row.superadmin.email})`.trim()
+            : "",
+        cell: ({ row }) => {
+          const su = row.original.superadmin;
+          if (!su) {
+            return (
+              <span className="text-xs text-muted-foreground">
+                Not assigned
+              </span>
+            );
+          }
+          return (
+            <div className="flex flex-col text-xs">
+              <span className="font-medium flex items-center gap-1">
+                <Shield className="h-3 w-3 text-amber-500" />
+                {su.name || "Unnamed"}
+              </span>
+              <span className="text-muted-foreground">{su.email}</span>
+            </div>
+          );
+        },
+      },
+
+      // STATUS
+      {
+        id: "status",
+        header: "Status",
+        accessorFn: (row) => (row.isActive ? "Active" : "Disabled"),
+        cell: ({ row }) => {
+          const t = row.original;
+          return (
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={t.isActive}
+                disabled={!canManageTenants || isPending}
+                onCheckedChange={() => handleToggleActive(t)}
+              />
+              <Badge
+                variant={t.isActive ? "default" : "secondary"}
+                className="text-[10px]"
+              >
+                {t.isActive ? "Active" : "Disabled"}
+              </Badge>
+            </div>
+          );
+        },
+      },
+
+      // CREATED
+      {
+        id: "createdAt",
+        header: "Created",
+        accessorFn: (row) =>
+          new Date(row.createdAt).toLocaleDateString(),
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">
+            {new Date(row.original.createdAt).toLocaleDateString()}
+          </span>
+        ),
+      },
+
+      {
+        id: "actions",
+        header: () => <div className="text-right">Actions</div>,
+        cell: ({ row }) => {
+          const t = row.original;
+          return (
+            <div className="flex justify-end gap-1">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-emerald-600 hover:bg-emerald-50"
+                disabled={!canManageTenants}
+                onClick={() => openSuperadminModal(t)}
+                title="Create / update tenant superadmin"
+              >
+                <UserPlus className="h-4 w-4" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-amber-500 hover:bg-amber-50"
+                disabled={!canManageTenants}
+                onClick={() => openEditTenant(t)}
+                title="Edit tenant"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-red-500 hover:bg-red-50"
+                disabled={!canManageTenants}
+                onClick={() => confirmDeleteTenant(t)}
+                title="Delete tenant"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          );
+        },
+        meta: { exportable: false, printable: false },
+      },
+    ],
+    [canManageTenants, isPending]
+  );
 
   /* ============ RENDER ============ */
 
@@ -476,16 +505,25 @@ export function TenantsClient({ tenants, canManageTenants }: Props) {
           </Button>
         )}
       </div>
+<div className="rounded-md border bg-card shadow-sm">
+ <DataTable
+  columns={columns}
+  data={tenants}
+  searchColumnId="name"
+  searchPlaceholder="Filter tenants..."
+  onRefresh={() => router.refresh()}
+  fileName="tenants"
+  companySettings={companySettings || undefined}
+  brandingSettings={
+    brandingSettings?.darkLogoUrl
+      ? { darkLogoUrl: brandingSettings.darkLogoUrl }
+      : undefined
+  }
+/>
 
-      <div className="rounded-md border bg-card shadow-sm">
-        <DataTable
-          columns={columns}
-          data={tenants}
-          searchColumnId="name"
-          searchPlaceholder="Filter tenants..."
-          onRefresh={() => router.refresh()}
-        />
-      </div>
+
+</div>
+
 
       {/* CREATE / EDIT TENANT */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

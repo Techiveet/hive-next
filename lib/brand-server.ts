@@ -1,7 +1,19 @@
-// lib/brand-server.ts
-
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+
+const FALLBACK_FAVICON = null; 
+
+function normalizeUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  
+  // ✅ Keep Base64 data as is
+  if (url.startsWith("data:")) return url;
+  
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  if (url.startsWith("/")) return url;
+  
+  return `/${url}`;
+}
 
 export async function getBrandForRequest() {
   const h = await headers();
@@ -10,6 +22,7 @@ export async function getBrandForRequest() {
 
   let tenantId: string | null = null;
 
+  // 1. Resolve Tenant
   if (bareHost === "localhost") {
     const centralTenant = await prisma.tenant.findUnique({
       where: { slug: "central-hive" },
@@ -24,9 +37,36 @@ export async function getBrandForRequest() {
     tenantId = domain?.tenantId ?? null;
   }
 
-  const brand = await prisma.brandSettings.findFirst({
+  // 2. Fetch Brand
+  let brand = await prisma.brandSettings.findFirst({
     where: { tenantId },
   });
 
-  return brand;
+  // 3. Fallback to Central
+  if (!brand) {
+    brand = await prisma.brandSettings.findFirst({
+      where: { tenantId: null },
+    });
+  }
+
+  // 4. Default
+  if (!brand) {
+    return {
+      titleText: "Hive",
+      logoLightUrl: null,
+      logoDarkUrl: null,
+      faviconUrl: FALLBACK_FAVICON,
+      sidebarIconUrl: null,
+    };
+  }
+
+  return {
+    ...brand,
+    titleText: brand.titleText ?? "Hive",
+    logoLightUrl: normalizeUrl(brand.logoLightUrl),
+    logoDarkUrl: normalizeUrl(brand.logoDarkUrl),
+    // ✅ Fix: Ensure faviconUrl is included and normalized
+    faviconUrl: normalizeUrl(brand.faviconUrl) ?? FALLBACK_FAVICON,
+    sidebarIconUrl: normalizeUrl(brand.sidebarIconUrl),
+  };
 }

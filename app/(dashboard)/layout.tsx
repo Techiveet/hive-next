@@ -2,7 +2,6 @@
 
 import { DashboardShell } from "@/components/dashboard-shell";
 import { FileManagerEventListener } from "@/components/file-manager/file-manager-event-listener";
-import type { Metadata } from "next";
 import { PermissionsProvider } from "@/components/providers/permissions-provider";
 import { getCurrentSession } from "@/lib/auth-server";
 import { getCurrentUserPermissions } from "@/lib/permissions";
@@ -89,7 +88,7 @@ export default async function DashboardLayout({
           titleText: brand?.titleText ?? null,
           logoLightUrl: brand?.logoLightUrl ?? null,
           logoDarkUrl: brand?.logoDarkUrl ?? null,
-          faviconUrl: brand?.faviconUrl ?? null,
+          sidebarIconUrl: brand?.sidebarIconUrl ?? null,
         }}
       >
         {children}

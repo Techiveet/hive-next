@@ -29,6 +29,7 @@ import {
   PlusCircle,
   Trash2,
 } from "lucide-react";
+
 import {
   deletePermissionAction,
   upsertPermissionAction,
@@ -37,13 +38,17 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DataTable,
+  type CompanySettingsInfo,
+  type BrandingSettingsInfo,
+} from "@/components/data-table";
 import { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components/data-table";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
 // --- Types ---
-type PermissionWithFlag = {
+export type PermissionWithFlag = {
   id: number;
   name: string;
   key: string;
@@ -54,21 +59,24 @@ type PermissionWithFlag = {
 type Props = {
   permissions: PermissionWithFlag[];
   tenantId: string | null;
-  permissionsList: string[]; // ⬅️ Prop from Server
+  permissionsList: string[];
+  companySettings?: CompanySettingsInfo | null;
+  brandingSettings?: BrandingSettingsInfo | null;
 };
 
 export function PermissionsTab({
   permissions,
   tenantId,
   permissionsList = [],
+  companySettings,
+  brandingSettings,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = React.useTransition();
 
-  // 1. STRICT PERMISSIONS
+  // STRICT PERMISSIONS
   const has = (key: string) => permissionsList.includes(key);
-  
-  // ⬇️ ADDED: View Permission
+
   const canViewPermissions = has("permissions.view");
   const canCreatePermissions = has("permissions.create");
   const canUpdatePermissions = has("permissions.update");
@@ -77,7 +85,9 @@ export function PermissionsTab({
   // --- State ---
   const [createOpen, setCreateOpen] = React.useState(false);
   const [viewOpen, setViewOpen] = React.useState(false);
-  const [viewPerm, setViewPerm] = React.useState<PermissionWithFlag | null>(null);
+  const [viewPerm, setViewPerm] = React.useState<PermissionWithFlag | null>(
+    null
+  );
 
   const [form, setForm] = React.useState<{
     id: number | null;
@@ -85,9 +95,7 @@ export function PermissionsTab({
     key: string;
   }>({ id: null, name: "", key: "" });
 
-  // ---------------------------
   // helpers
-  // ---------------------------
 
   const openCreate = React.useCallback(() => {
     if (!canCreatePermissions) return;
@@ -98,7 +106,7 @@ export function PermissionsTab({
   const openEdit = React.useCallback(
     (p: PermissionWithFlag) => {
       if (!canUpdatePermissions) return;
-      
+
       if (tenantId && p.isGlobal) {
         toast.error("Cannot edit system permissions.");
         return;
@@ -109,12 +117,14 @@ export function PermissionsTab({
     [canUpdatePermissions, tenantId]
   );
 
-  const openView = React.useCallback((p: PermissionWithFlag) => {
-    // ⬇️ ADDED: Guard clause for view
-    if (!canViewPermissions) return;
-    setViewPerm(p);
-    setViewOpen(true);
-  }, [canViewPermissions]);
+  const openView = React.useCallback(
+    (p: PermissionWithFlag) => {
+      if (!canViewPermissions) return;
+      setViewPerm(p);
+      setViewOpen(true);
+    },
+    [canViewPermissions]
+  );
 
   const handleSubmit = React.useCallback(
     (e: React.FormEvent) => {
@@ -139,10 +149,7 @@ export function PermissionsTab({
     [form, tenantId, canCreatePermissions, canUpdatePermissions, router]
   );
 
-  // ---------------------------
   // table columns
-  // ---------------------------
-
   const columns = React.useMemo<ColumnDef<PermissionWithFlag>[]>(
     () => [
       {
@@ -154,9 +161,7 @@ export function PermissionsTab({
                 table.getIsAllPageRowsSelected() ||
                 (table.getIsSomePageRowsSelected() && "indeterminate")
               }
-              onCheckedChange={(val) =>
-                table.toggleAllPageRowsSelected(!!val)
-              }
+              onCheckedChange={(val) => table.toggleAllPageRowsSelected(!!val)}
               disabled={!canDeletePermissions}
             />
           </div>
@@ -194,51 +199,47 @@ export function PermissionsTab({
           </code>
         ),
       },
-    {
-  id: "type",
-  header: "Type",
-  // 🔹 This makes it show up correctly in Copy / CSV / XLSX / PDF / Print
-  meta: {
-    exportValue: (row: PermissionWithFlag) =>
-      row.isGlobal ? "System" : "Custom",
-  },
-  cell: ({ row }) =>
-    row.original.isGlobal ? (
-      <Badge variant="secondary" className="text-[10px] font-normal">
-        System
-      </Badge>
-    ) : (
-      <Badge
-        variant="outline"
-        className="text-[10px] font-normal border-indigo-200 text-indigo-700 bg-indigo-50"
-      >
-        Custom
-      </Badge>
-    ),
-},
-
+      {
+        id: "type",
+        header: "Type",
+        meta: {
+          exportValue: (row: PermissionWithFlag) =>
+            row.isGlobal ? "System" : "Custom",
+        },
+        cell: ({ row }) =>
+          row.original.isGlobal ? (
+            <Badge variant="secondary" className="text-[10px] font-normal">
+              System
+            </Badge>
+          ) : (
+            <Badge
+              variant="outline"
+              className="text-[10px] font-normal border-indigo-200 text-indigo-700 bg-indigo-50"
+            >
+              Custom
+            </Badge>
+          ),
+      },
       {
         id: "actions",
         header: () => <div className="text-right">Actions</div>,
         cell: ({ row }) => {
           const p = row.original;
           const isSystemLocked = !!tenantId && p.isGlobal;
-          
-          // GATES
-          const viewDisabled = !canViewPermissions; // ⬇️ New Check
+
+          const viewDisabled = !canViewPermissions;
           const editDisabled = isSystemLocked || !canUpdatePermissions;
           const deleteDisabled = isSystemLocked || !canDeletePermissions;
 
           return (
             <div className="flex justify-end gap-1">
-              
-              {/* 🟢 VIEW BUTTON */}
+              {/* VIEW */}
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-blue-500 hover:bg-blue-50"
                 onClick={() => openView(p)}
-                disabled={viewDisabled} // ⬇️ Disabled if no permission
+                disabled={viewDisabled}
                 title={viewDisabled ? "No permission" : "View Details"}
               >
                 {viewDisabled ? (
@@ -248,6 +249,7 @@ export function PermissionsTab({
                 )}
               </Button>
 
+              {/* EDIT */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -263,6 +265,7 @@ export function PermissionsTab({
                 )}
               </Button>
 
+              {/* DELETE */}
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
@@ -283,7 +286,8 @@ export function PermissionsTab({
                   <AlertDialogHeader>
                     <AlertDialogTitle>Delete Permission?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This action cannot be undone. It may break features if roles depend on it.
+                      This action cannot be undone. It may break features if
+                      roles depend on it.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -315,12 +319,11 @@ export function PermissionsTab({
         },
       },
     ],
-    // ⬇️ Added dependency
     [
       tenantId,
       canUpdatePermissions,
       canDeletePermissions,
-      canViewPermissions, 
+      canViewPermissions,
       openEdit,
       openView,
       startTransition,
@@ -337,8 +340,7 @@ export function PermissionsTab({
             Fine-grained access controls.
           </p>
         </div>
-        
-        {/* 🔒 CREATE GATE */}
+
         {canCreatePermissions && (
           <Button
             onClick={openCreate}
@@ -356,18 +358,20 @@ export function PermissionsTab({
           searchColumnId="name"
           searchPlaceholder="Filter permissions..."
           onRefresh={() => router.refresh()}
+          fileName="permissions"
+          companySettings={companySettings ?? undefined}
+          brandingSettings={brandingSettings ?? undefined}
           onDeleteRows={async (rows) => {
             if (!canDeletePermissions) {
               toast.error("You do not have permission to delete permissions.");
               return;
             }
-            // ... (rest of delete logic unchanged)
             let errors = 0;
             await Promise.all(
-              rows.map(async (p: any) => {
+              rows.map(async (p: PermissionWithFlag) => {
                 try {
                   await deletePermissionAction(p.id, tenantId);
-                } catch (e: any) {
+                } catch {
                   errors++;
                 }
               })

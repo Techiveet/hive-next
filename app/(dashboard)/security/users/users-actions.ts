@@ -1,4 +1,4 @@
-// app/(dashboard)/security/users-actions.ts
+// app/(dashboard)/security/users/users-actions.ts
 "use server";
 
 import {
@@ -66,7 +66,7 @@ async function authorizeUserAction(
   const { user } = await getCurrentSession();
   if (!user?.id) throw new Error("UNAUTHORIZED");
 
-  // --- Context / membership guard ---
+  // context / membership guard
   if (tenantId) {
     const membership = await prisma.userTenant.findUnique({
       where: { userId_tenantId: { userId: user.id, tenantId } },
@@ -89,13 +89,12 @@ async function authorizeUserAction(
     }
   }
 
-  // --- Fine-grained permission guard ---
+  // fine-grained permissions
   const perms = await getCurrentUserPermissions(tenantId ?? null);
 
   const hasRequired = requiredPermissions.some(
     (key) =>
       perms.includes(key) ||
-      // legacy / super switches
       perms.includes("manage_users") ||
       perms.includes("manage_security")
   );
@@ -109,8 +108,6 @@ async function authorizeUserAction(
 
 /* ------------------------------------------------------------------
  * CREATE / UPDATE USER
- * - also enforces only ONE central_superadmin user
- *   and ONE tenant_superadmin user per tenant
  * ------------------------------------------------------------------ */
 
 export async function createOrUpdateUserAction(rawData: unknown) {
@@ -172,10 +169,12 @@ export async function createOrUpdateUserAction(rawData: unknown) {
   let changedName = false;
   let changedPassword = false;
   let changedRole = false;
-  const plainPassword = input.password?.trim() || undefined;
+
+  const plainPassword = (input.password ?? "").trim();
+  const normalizedEmail = input.email.toLowerCase().trim();
 
   if (input.id) {
-    // ------------ UPDATE ------------
+    /* ---------------------- UPDATE USER ---------------------- */
     const existing = await prisma.user.findUnique({
       where: { id: input.id },
       include: { userRoles: true },
@@ -183,49 +182,34 @@ export async function createOrUpdateUserAction(rawData: unknown) {
     if (!existing) throw new Error("USER_NOT_FOUND");
 
     changedName = existing.name !== input.name;
-    changedPassword = Boolean(plainPassword);
+    changedPassword = false; // we DO NOT change password here
 
     user = await prisma.user.update({
-      where: { id: input.id },
-      data: { name: input.name },
+      where: { id: existing.id },
+      data: {
+        name: input.name,
+        avatarUrl: input.avatarUrl ?? null,
+        image: input.avatarUrl ?? existing.image ?? null,
+      },
     });
-
-    if (plainPassword) {
-      const ctx = await auth.$context;
-      const hashedPassword = await ctx.password.hash(plainPassword);
-      const normalizedEmail = existing.email.toLowerCase().trim();
-
-      await prisma.account.deleteMany({
-        where: { userId: user.id, providerId: "email" },
-      });
-
-      await prisma.account.create({
-        data: {
-          id: crypto.randomUUID(),
-          userId: user.id,
-          accountId: normalizedEmail,
-          providerId: "email",
-          password: hashedPassword,
-        },
-      });
-    }
 
     const existingRoleForContext = existing.userRoles.find((ur) =>
       input.tenantId ? ur.tenantId === input.tenantId : ur.tenantId === null
     );
     changedRole = existingRoleForContext?.roleId !== input.roleId;
   } else {
-    // ------------ CREATE ------------
+    /* ---------------------- CREATE USER ---------------------- */
     if (!plainPassword) throw new Error("PASSWORD_REQUIRED_FOR_NEW_USER");
 
     const existingEmail = await prisma.user.findFirst({
-      where: { email: input.email },
+      where: { email: normalizedEmail },
     });
     if (existingEmail) throw new Error("EMAIL_IN_USE");
 
+    // Let Better Auth create user + credential account
     const signUpResult = await auth.api.signUpEmail({
       body: {
-        email: input.email,
+        email: normalizedEmail,
         password: plainPassword,
         name: input.name,
       },
@@ -237,21 +221,25 @@ export async function createOrUpdateUserAction(rawData: unknown) {
       throw new Error("FAILED_TO_CREATE_USER_AUTH");
     }
 
-    user = await prisma.user.findUnique({
-      where: { id: signUpResult.user.id },
-    });
-    if (!user) throw new Error("USER_CREATED_BUT_NOT_FOUND");
-
+    // Patch extra fields via Prisma
     user = await prisma.user.update({
-      where: { id: user.id },
+      where: { id: signUpResult.user.id },
       data: {
+        name: input.name,
+        email: normalizedEmail,
         emailVerified: true,
         isActive: true,
+        avatarUrl: input.avatarUrl ?? null,
+        image: input.avatarUrl ?? null,
       },
     });
+
+    changedPassword = true;
   }
 
-  // Link tenant + role (one active role per context)
+  /* ----------------------------------------------------------------
+   * Link tenant + role (one active role per context)
+   * ---------------------------------------------------------------- */
   if (input.tenantId) {
     await prisma.userTenant.upsert({
       where: {
@@ -282,11 +270,14 @@ export async function createOrUpdateUserAction(rawData: unknown) {
     });
   }
 
-  // Email
+  /* ----------------------------------------------------------------
+   * Email notification
+   * ---------------------------------------------------------------- */
   const status = user.isActive ? "ACTIVE" : "INACTIVE";
   const kind = input.id ? ("updated" as const) : ("created" as const);
-  const passwordForEmail =
-    kind === "created" || changedPassword ? plainPassword : undefined;
+
+  // Only send password in email for *new* users
+  const passwordForEmail = kind === "created" ? plainPassword : undefined;
 
   await sendEmail({
     to: user.email,
@@ -382,7 +373,6 @@ export async function toggleUserActiveAction(input: {
 }) {
   const tenantId = input.tenantId ?? null;
 
-  // treat active/deactive as "update user" permission
   const { actorId } = await authorizeUserAction(tenantId, ["users.update"]);
 
   if (input.userId === actorId && !input.newActive) {
@@ -422,6 +412,7 @@ export async function toggleUserActiveAction(input: {
   const kind = input.newActive
     ? ("updated" as const)
     : ("deactivated" as const);
+
   const { tenantName, tenantDomain, loginUrl } = await getTenantMeta(tenantId);
 
   await sendEmail({

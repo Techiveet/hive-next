@@ -1,4 +1,3 @@
-// app/(dashboard)/security/_components/roles-tab.tsx
 "use client";
 
 import * as React from "react";
@@ -39,20 +38,24 @@ import { deleteRoleAction, upsertRoleAction } from "../roles-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ColumnDef } from "@tanstack/react-table";
-import { DataTable } from "@/components/data-table";
+import {
+  DataTable,
+  type CompanySettingsInfo,
+  type BrandingSettingsInfo,
+} from "@/components/data-table";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { ColumnDef } from "@tanstack/react-table";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 
 // --- Types ---
-type RoleDto = {
+export type RoleDto = {
   id: number;
   key: string;
   name: string;
   scope: "CENTRAL" | "TENANT";
-  permissions: { id: number; key: string; name: string }[];
+  permissions: { id: number; key: string; name: string; isGlobal?: boolean }[];
   tenantId: string | null;
 };
 
@@ -62,6 +65,8 @@ type Props = {
   scopeProp: "CENTRAL" | "TENANT";
   tenantId: string | null;
   permissions: string[];
+  companySettings?: CompanySettingsInfo | null;
+  brandingSettings?: BrandingSettingsInfo | null;
 };
 
 type FilterType = "all" | "enabled" | "disabled";
@@ -72,16 +77,18 @@ export function RolesTab({
   scopeProp,
   tenantId,
   permissions = [],
+  companySettings,
+  brandingSettings,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = React.useTransition();
 
-  // 1. STRICT PERMISSIONS
+  // STRICT PERMISSIONS
   const has = (key: string) => permissions.includes(key);
-  const canViewRoles = has("roles.view");
-  const canCreateRoles = has("roles.create");
-  const canUpdateRoles = has("roles.update");
-  const canDeleteRoles = has("roles.delete");
+  const canViewRoles = has("roles.view") || has("manage_security");
+  const canCreateRoles = has("roles.create") || has("manage_security");
+  const canUpdateRoles = has("roles.update") || has("manage_security");
+  const canDeleteRoles = has("roles.delete") || has("manage_security");
 
   // --- State ---
   const [createModalOpen, setCreateModalOpen] = React.useState(false);
@@ -105,48 +112,47 @@ export function RolesTab({
     permissionIds: [],
   });
 
-  const isProtected = (key: string) =>
-    ["central_superadmin", "tenant_superadmin"].includes(key);
+  const isProtected = React.useCallback(
+    (key: string) =>
+      ["central_superadmin", "tenant_superadmin"].includes(key),
+    []
+  );
 
-  // 🔍 FILTER LOGIC
+  // FILTER LOGIC
   const filteredPermissions = React.useMemo(() => {
     let result = allPermissions;
 
-    // 1. Filter by Search Text
     if (permissionSearch) {
       const lower = permissionSearch.toLowerCase();
       result = result.filter(
-        (p) =>
+        (p: any) =>
           p.name.toLowerCase().includes(lower) ||
           p.key.toLowerCase().includes(lower)
       );
     }
 
-    // 2. Filter by Status
     if (permissionFilter === "enabled") {
-      result = result.filter((p) => form.permissionIds.includes(p.id));
+      result = result.filter((p: any) => form.permissionIds.includes(p.id));
     } else if (permissionFilter === "disabled") {
-      result = result.filter((p) => !form.permissionIds.includes(p.id));
+      result = result.filter((p: any) => !form.permissionIds.includes(p.id));
     }
 
     return result;
   }, [allPermissions, permissionSearch, permissionFilter, form.permissionIds]);
 
-  // 🟢 NEW: BULK ASSIGN ACTIONS
+  // BULK ASSIGN
   const handleSelectAll = () => {
-    const idsToAdd = filteredPermissions.map((p) => p.id);
+    const idsToAdd = filteredPermissions.map((p: any) => p.id);
     setForm((prev) => ({
       ...prev,
-      // Add new IDs to existing IDs, using Set to remove duplicates
       permissionIds: Array.from(new Set([...prev.permissionIds, ...idsToAdd])),
     }));
   };
 
   const handleDeselectAll = () => {
-    const idsToRemove = filteredPermissions.map((p) => p.id);
+    const idsToRemove = filteredPermissions.map((p: any) => p.id);
     setForm((prev) => ({
       ...prev,
-      // Keep only IDs that are NOT in the current filtered list
       permissionIds: prev.permissionIds.filter(
         (id) => !idsToRemove.includes(id)
       ),
@@ -261,7 +267,6 @@ export function RolesTab({
         id: "permissions",
         header: "Permissions",
         meta: {
-          // What goes into CSV / XLSX / PDF / Print
           exportValue: (role: RoleDto) =>
             role.permissions.length
               ? role.permissions.map((p) => p.name).join(", ")
@@ -289,6 +294,7 @@ export function RolesTab({
 
           return (
             <div className="flex justify-end gap-1">
+              {/* VIEW */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -304,6 +310,7 @@ export function RolesTab({
                 )}
               </Button>
 
+              {/* EDIT */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -319,6 +326,7 @@ export function RolesTab({
                 )}
               </Button>
 
+              {/* DELETE */}
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button
@@ -371,7 +379,7 @@ export function RolesTab({
         },
       },
     ],
-    [isProtected, canDeleteRoles, canUpdateRoles, canViewRoles]
+    [isProtected, canDeleteRoles, canUpdateRoles, canViewRoles, router, startTransition]
   );
 
   return (
@@ -401,18 +409,21 @@ export function RolesTab({
           searchColumnId="name"
           searchPlaceholder="Filter roles..."
           onRefresh={() => router.refresh()}
+          fileName="roles"
+          companySettings={companySettings ?? undefined}
+          brandingSettings={brandingSettings ?? undefined}
           onDeleteRows={async (rows) => {
             if (!canDeleteRoles) {
               toast.error("No permission to delete.");
               return;
             }
-            const deletable = rows.filter((r) => !isProtected(r.key));
+            const deletable = rows.filter((r: RoleDto) => !isProtected(r.key));
             let errors = 0;
             await Promise.all(
               deletable.map(async (role) => {
                 try {
                   await deleteRoleAction(role.id);
-                } catch (e: any) {
+                } catch {
                   errors++;
                 }
               })
@@ -476,9 +487,8 @@ export function RolesTab({
                 </span>
               </div>
 
-              {/* 🟢 CONTROLS: SEARCH + FILTER + SELECT ALL */}
+              {/* Search / filter / bulk controls */}
               <div className="flex flex-col gap-2 bg-muted/30 p-2 rounded-md border">
-                {/* Row 1: Search */}
                 <div className="relative">
                   <Search className="absolute left-2 top-1.5 h-3 w-3 text-muted-foreground" />
                   <input
@@ -489,7 +499,6 @@ export function RolesTab({
                   />
                 </div>
 
-                {/* Row 2: Filters & Actions */}
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex gap-1">
                     <Button
@@ -531,7 +540,6 @@ export function RolesTab({
                     </Button>
                   </div>
 
-                  {/* 🟢 BULK ACTIONS (Respects Filter) */}
                   <div className="flex gap-1">
                     <Button
                       type="button"
@@ -566,7 +574,7 @@ export function RolesTab({
                       </p>
                     </div>
                   ) : (
-                    filteredPermissions.map((p) => {
+                    filteredPermissions.map((p: any) => {
                       const isSelected = form.permissionIds.includes(p.id);
                       return (
                         <label

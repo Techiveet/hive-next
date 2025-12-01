@@ -1,23 +1,19 @@
-// app/(dashboard)/tenants/page.tsx
+// app/(dashboard)/security/users/page.tsx
 
 import { Breadcrumb } from "@/components/breadcrumb";
-import { RoleScope } from "@prisma/client";
-import { TenantsClient } from "./_components/tenants-client";
+import { UsersClient } from "./_components/users-tab-client"; // your existing client component
 import { getCurrentSession } from "@/lib/auth-server";
 import { getCurrentUserPermissions } from "@/lib/rbac";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 
-/**
- * Same host → tenant resolution logic you use in the dashboard layout
- */
+// --- same helper you used in Tenants page ---
 async function resolveTenantIdFromHost(): Promise<string | null> {
   const h = await headers();
   const host = (h.get("host") || "").toLowerCase();
   const bareHost = host.split(":")[0];
 
-  // local dev → central tenant by slug
   if (bareHost === "localhost") {
     const centralTenant = await prisma.tenant.findUnique({
       where: { slug: "central-hive" },
@@ -26,7 +22,6 @@ async function resolveTenantIdFromHost(): Promise<string | null> {
     return centralTenant?.id ?? null;
   }
 
-  // custom domain → tenantDomain table
   const domain = await prisma.tenantDomain.findFirst({
     where: { domain: bareHost },
     select: { tenantId: true },
@@ -35,58 +30,34 @@ async function resolveTenantIdFromHost(): Promise<string | null> {
   return domain?.tenantId ?? null;
 }
 
-export default async function TenantsPage() {
+export default async function UsersPage() {
   const { user } = await getCurrentSession();
   if (!user?.id) redirect("/");
 
-  const permissions = await getCurrentUserPermissions(null); // CENTRAL context
-  const canManageTenants =
-    permissions.includes("manage_tenants") ||
+  const permissions = await getCurrentUserPermissions(null); // central
+  const canManageUsers =
+    permissions.includes("manage_users") ||
     permissions.includes("manage_security");
 
-  if (!canManageTenants) {
-    redirect("/");
+  if (!canManageUsers) redirect("/");
+
+  // --- your existing users query here ---
+  const users = await prisma.user.findMany({
+    /* ...existing include/orderBy... */
+  });
+  const tenantId = await resolveTenantIdFromHost();
+
+  // ---------- COMPANY SETTINGS (tenant-aware) ----------
+  let company = await prisma.companySettings.findFirst({
+    where: { tenantId }, // resolve from host
+  });
+
+  if (!company) {
+    company = await prisma.companySettings.findFirst({
+      where: { tenantId: null }, // global fallback
+    });
   }
 
-  // ---------- TENANTS ----------
-  const tenants = await prisma.tenant.findMany({
-    include: {
-      domains: true,
-      users: {
-        where: { isOwner: true },
-        include: { user: true },
-      },
-      roles: {
-        where: { scope: RoleScope.TENANT },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-
-  const mapped = tenants.map((t) => {
-    const primaryOwner = t.users[0]?.user ?? null;
-    const superRole = t.roles.find((r) => r.key === "tenant_superadmin");
-
-    return {
-      id: t.id,
-      name: t.name,
-      slug: t.slug,
-      isActive: t.isActive,
-      createdAt: t.createdAt.toISOString(),
-      domain: t.domains[0]?.domain ?? null,
-      superadmin: primaryOwner
-        ? {
-            id: primaryOwner.id,
-            name: primaryOwner.name,
-            email: primaryOwner.email,
-          }
-        : null,
-      superadminRoleId: superRole?.id ?? null,
-    };
-  });
-
-  // ---------- COMPANY SETTINGS (header text) ----------
-  const company = await prisma.companySettings.findFirst();
   const companySettings = company
     ? {
         companyName: company.companyName ?? "",
@@ -105,15 +76,12 @@ export default async function TenantsPage() {
       }
     : null;
 
-  // ---------- BRAND (same source as Sidebar) ----------
-  const tenantId = await resolveTenantIdFromHost();
+  // ---------- BRAND SETTINGS (same as Tenants) ----------
 
-  // 1) try brand for this tenant
   let brand = await prisma.brandSettings.findFirst({
     where: { tenantId },
   });
 
-  // 2) fallback to global/central brand (tenantId = null)
   if (!brand) {
     brand = await prisma.brandSettings.findFirst({
       where: { tenantId: null },
@@ -123,7 +91,6 @@ export default async function TenantsPage() {
   const brandingSettings =
     brand && (brand.logoDarkUrl || brand.logoLightUrl)
       ? {
-          // prefer dark logo, fall back to light (so export always has *some* logo)
           darkLogoUrl: (brand.logoDarkUrl || brand.logoLightUrl)!,
         }
       : null;
@@ -135,16 +102,16 @@ export default async function TenantsPage() {
           <Breadcrumb />
         </div>
         <div className="space-y-1">
-          <h1 className="text-lg font-semibold tracking-tight">Tenants</h1>
+          <h1 className="text-lg font-semibold tracking-tight">Users</h1>
           <p className="text-xs text-muted-foreground">
-            Manage tenant lifecycle, domains, and tenant users.
+            Manage central users, roles and access.
           </p>
         </div>
       </div>
 
-      <TenantsClient
-        tenants={mapped}
-        canManageTenants={canManageTenants}
+      <UsersClient
+        users={users}
+        canManageUsers={canManageUsers}
         companySettings={companySettings}
         brandingSettings={brandingSettings}
       />

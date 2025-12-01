@@ -127,41 +127,252 @@ async function main() {
   // ---------------------------------------------------------------------------
   section("Seeding permissions");
 
+  // 🔥 IMPORTANT: clear old role-permissions & system permissions so we
+  // don't double-insert on every seed run.
+  await prisma.rolePermission.deleteMany({});
+  await prisma.permission.deleteMany({
+    where: { tenantId: null }, // only system/global perms
+  });
+
   const permissionsData = [
-    // --- core system / central only ---
+    // --- Dashboard / general -------------------------------------------------
+    { key: "dashboard.view", name: "View Dashboard" },
+
+    // --- core system / central only -----------------------------------------
     { key: "manage_tenants", name: "Manage Tenants" },
+    { key: "manage_settings", name: "Manage Settings" },
     { key: "manage_billing", name: "Manage Billing & Subscriptions" },
     { key: "view_audit_logs", name: "View Audit Logs" },
 
-    // --- security area (high-level switches) ---
+    // --- security area (high-level switches) --------------------------------
     { key: "view_security", name: "View Security Area" },
     { key: "manage_security", name: "Manage Security (Users/Roles)" },
 
-    // --- USERS: CRUD permissions ---
+    // --- USERS: CRUD permissions --------------------------------------------
     { key: "users.view", name: "View Users" },
     { key: "users.create", name: "Create Users" },
     { key: "users.update", name: "Update Users" },
     { key: "users.delete", name: "Delete Users" },
 
-    // --- ROLES: CRUD permissions ---
+    // --- ROLES: CRUD permissions --------------------------------------------
     { key: "roles.view", name: "View Roles" },
     { key: "roles.create", name: "Create Roles" },
     { key: "roles.update", name: "Update Roles" },
     { key: "roles.delete", name: "Delete Roles" },
 
-    // --- PERMISSIONS: CRUD permissions ---
+    // --- PERMISSIONS: CRUD permissions --------------------------------------
     { key: "permissions.view", name: "View Permissions" },
     { key: "permissions.create", name: "Create Permissions" },
     { key: "permissions.update", name: "Update Permissions" },
     { key: "permissions.delete", name: "Delete Permissions" },
 
-    // --- coarse-grained legacy flags (keep if existing code uses them) ---
+    // --- coarse-grained legacy flags (keep for existing checks) -------------
     { key: "manage_users", name: "Manage Users" },
     { key: "manage_roles", name: "Manage Roles & Permissions" },
 
-    // --- file manager ---
+    // --- file manager --------------------------------------------------------
+    { key: "files.view", name: "View Files" },
+    { key: "files.upload", name: "Upload Files" },
+    { key: "files.update", name: "Rename / Move Files" },
+    { key: "files.delete", name: "Delete Files" },
+    { key: "folders.view", name: "View Folders" },
+    { key: "folders.create", name: "Create Folders" },
+    { key: "folders.update", name: "Rename / Move Folders" },
+    { key: "folders.delete", name: "Delete Folders" },
     { key: "manage_files", name: "Manage Files & Folders" },
     { key: "manage_storage_settings", name: "Manage Storage Settings" },
+
+    // --- settings: brand / company / email / notifications / localization ---
+    { key: "settings.brand.view", name: "View Brand Settings" },
+    { key: "settings.brand.update", name: "Update Brand Settings" },
+    { key: "settings.company.view", name: "View Company Settings" },
+    { key: "settings.company.update", name: "Update Company Settings" },
+    { key: "settings.email.view", name: "View Email Settings" },
+    { key: "settings.email.update", name: "Update Email Settings" },
+    {
+      key: "settings.notifications.view",
+      name: "View Notification Settings",
+    },
+    {
+      key: "settings.notifications.update",
+      name: "Update Notification Settings",
+    },
+    {
+      key: "settings.localization.view",
+      name: "View Localization / Languages",
+    },
+    {
+      key: "settings.localization.update",
+      name: "Manage Localization / Languages",
+    },
+
+    // --- departments / org structure ----------------------------------------
+    { key: "departments.view", name: "View Departments" },
+    { key: "departments.create", name: "Create Departments" },
+    { key: "departments.update", name: "Update Departments" },
+    { key: "departments.delete", name: "Delete Departments" },
+
+    // --- inventory: goods / categories / units / shelves --------------------
+    { key: "inventory.view", name: "View Inventory Overview" },
+    { key: "inventory.manage", name: "Manage Inventory" },
+
+    { key: "products.view", name: "View Goods / Products" },
+    { key: "products.create", name: "Create Goods / Products" },
+    { key: "products.update", name: "Update Goods / Products" },
+    { key: "products.delete", name: "Delete Goods / Products" },
+    { key: "products.export", name: "Export Goods / Products" },
+    { key: "products.print", name: "Print Goods / Products" },
+
+    {
+      key: "product_categories.view",
+      name: "View Product Categories",
+    },
+    {
+      key: "product_categories.create",
+      name: "Create Product Categories",
+    },
+    {
+      key: "product_categories.update",
+      name: "Update Product Categories",
+    },
+    {
+      key: "product_categories.delete",
+      name: "Delete Product Categories",
+    },
+
+    { key: "units.view", name: "View Units of Measure" },
+    { key: "units.create", name: "Create Units of Measure" },
+    { key: "units.update", name: "Update Units of Measure" },
+    { key: "units.delete", name: "Delete Units of Measure" },
+
+    { key: "shelves.view", name: "View Shelves / Locations" },
+    { key: "shelves.create", name: "Create Shelves / Locations" },
+    { key: "shelves.update", name: "Update Shelves / Locations" },
+    { key: "shelves.delete", name: "Delete Shelves / Locations" },
+
+    { key: "stock_adjustments.view", name: "View Stock Adjustments" },
+    { key: "stock_adjustments.create", name: "Create Stock Adjustments" },
+    { key: "stock_adjustments.update", name: "Update Stock Adjustments" },
+    { key: "stock_adjustments.delete", name: "Delete Stock Adjustments" },
+
+    // --- suppliers / vendors ------------------------------------------------
+    { key: "suppliers.view", name: "View Suppliers" },
+    { key: "suppliers.create", name: "Create Suppliers" },
+    { key: "suppliers.update", name: "Update Suppliers" },
+    { key: "suppliers.delete", name: "Delete Suppliers" },
+
+    { key: "vendors.view", name: "View Vendors" },
+    { key: "vendors.create", name: "Create Vendors" },
+    { key: "vendors.update", name: "Update Vendors" },
+    { key: "vendors.delete", name: "Delete Vendors" },
+
+    {
+      key: "vendor_opening_balances.view",
+      name: "View Vendor Opening Balances",
+    },
+    {
+      key: "vendor_opening_balances.create",
+      name: "Create Vendor Opening Balances",
+    },
+    {
+      key: "vendor_opening_balances.update",
+      name: "Update Vendor Opening Balances",
+    },
+    {
+      key: "vendor_opening_balances.delete",
+      name: "Delete Vendor Opening Balances",
+    },
+
+    // --- purchase requests / purchase orders / approvals --------------------
+    { key: "purchase_requests.view", name: "View Purchase Requests" },
+    { key: "purchase_requests.create", name: "Create Purchase Requests" },
+    { key: "purchase_requests.update", name: "Update Purchase Requests" },
+    { key: "purchase_requests.delete", name: "Delete Purchase Requests" },
+    { key: "purchase_requests.approve", name: "Approve Purchase Requests" },
+    { key: "purchase_requests.export", name: "Export Purchase Requests" },
+    { key: "purchase_requests.print", name: "Print Purchase Requests" },
+
+    { key: "purchase_orders.view", name: "View Purchase Orders" },
+    { key: "purchase_orders.create", name: "Create Purchase Orders" },
+    { key: "purchase_orders.update", name: "Update Purchase Orders" },
+    { key: "purchase_orders.delete", name: "Delete Purchase Orders" },
+    { key: "purchase_orders.approve", name: "Approve Purchase Orders" },
+    { key: "purchase_orders.export", name: "Export Purchase Orders" },
+    { key: "purchase_orders.print", name: "Print Purchase Orders" },
+
+    {
+      key: "purchase_approvals.view",
+      name: "View Purchase Approvals",
+    },
+    {
+      key: "purchase_approvals.approve",
+      name: "Approve / Reject Purchase Requests",
+    },
+
+    // --- transfers ----------------------------------------------------------
+    { key: "transfers.view", name: "View Inventory Transfers" },
+    { key: "transfers.create", name: "Create Inventory Transfers" },
+    { key: "transfers.update", name: "Update Inventory Transfers" },
+    { key: "transfers.delete", name: "Delete Inventory Transfers" },
+    { key: "transfers.approve", name: "Approve Inventory Transfers" },
+
+    // --- goods receiving / GRN ----------------------------------------------
+    {
+      key: "goods_receiving.view",
+      name: "View Goods Receiving Notes",
+    },
+    {
+      key: "goods_receiving.create",
+      name: "Create Goods Receiving Notes",
+    },
+    {
+      key: "goods_receiving.update",
+      name: "Update Goods Receiving Notes",
+    },
+    {
+      key: "goods_receiving.delete",
+      name: "Delete Goods Receiving Notes",
+    },
+    {
+      key: "goods_receiving.approve",
+      name: "Approve / Sign Goods Receiving Notes",
+    },
+    {
+      key: "goods_receiving.print",
+      name: "Print Goods Receiving Notes",
+    },
+
+    // --- invoices / finance -------------------------------------------------
+    { key: "invoices.view", name: "View Invoices" },
+    { key: "invoices.create", name: "Create Invoices" },
+    { key: "invoices.update", name: "Update Invoices" },
+    { key: "invoices.delete", name: "Delete Invoices" },
+    { key: "invoices.approve", name: "Approve Invoices" },
+    { key: "invoices.print", name: "Print Invoices" },
+    { key: "invoices.export", name: "Export Invoices" },
+
+    { key: "payments.view", name: "View Payments" },
+    { key: "payments.create", name: "Create Payments" },
+    { key: "payments.update", name: "Update Payments" },
+    { key: "payments.delete", name: "Delete Payments" },
+
+    { key: "finance_reports.view", name: "View Finance Reports" },
+
+    // --- notifications / realtime events -----------------------------------
+    { key: "notifications.view", name: "View Notifications" },
+    { key: "notifications.manage", name: "Manage Notification Rules" },
+
+    // --- exports / print (generic) -----------------------------------------
+    { key: "export.csv", name: "Export to CSV" },
+    { key: "export.excel", name: "Export to Excel" },
+    { key: "export.pdf", name: "Export to PDF" },
+    { key: "print.view", name: "Use Print Views" },
+
+    // --- marketplace / subscriptions ---------------------------------------
+    { key: "plans.view", name: "View Subscription Plans" },
+    { key: "plans.manage", name: "Manage Subscription Plans" },
+    { key: "subscriptions.view", name: "View Subscriptions" },
+    { key: "subscriptions.manage", name: "Manage Subscriptions" },
   ];
 
   await prisma.permission.createMany({
@@ -350,6 +561,8 @@ async function main() {
     ]),
   ];
 
+  // rolePermission for these role IDs is already wiped at top,
+  // but calling again is harmless. You can remove this if you want.
   await prisma.rolePermission.deleteMany({
     where: { roleId: { in: allRoleIds } },
   });
@@ -364,8 +577,8 @@ async function main() {
       ...rolePerms(r.superadminId, tenantPermKeys),
       // tenant admin → same as superadmin for now
       ...rolePerms(r.adminId, tenantPermKeys),
-      // tenant member → files only
-      ...rolePerms(r.memberId, ["manage_files"]),
+      // tenant member → files only (plus whatever else you want)
+      ...rolePerms(r.memberId, ["manage_files", "files.view", "files.upload"]),
     ]),
   ];
 

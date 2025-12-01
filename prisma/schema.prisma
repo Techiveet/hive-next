@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
@@ -7,14 +9,22 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// =====================
+//       USER / AUTH
+// =====================
+
 model User {
   id            String   @id
   name          String   @db.Text
   email         String
   emailVerified Boolean  @default(false)
-  image         String?  @db.Text
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+
+  // make both large enough for long URLs / base64
+  image     String?  @db.LongText
+  avatarUrl String?  @db.LongText
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   isActive Boolean @default(true)
 
@@ -23,8 +33,9 @@ model User {
   userRoles         UserRole[]
 
   // file manager relations
-  folders  Folder[]  @relation("UserFolders")
-  files    File[]    @relation("UserFiles")
+  folders  Folder[] @relation("UserFolders")
+  files    File[]   @relation("UserFiles")
+
   sessions Session[]
   accounts Account[]
 
@@ -49,23 +60,23 @@ model Session {
 }
 
 model Account {
-  id                    String    @id
+  id                    String   @id
   accountId             String
   providerId            String
   userId                String
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken           String?   @db.Text
-  refreshToken          String?   @db.Text
-  idToken               String?   @db.Text
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?  @db.Text
+  refreshToken          String?  @db.Text
+  idToken               String?  @db.Text
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
-  scope                 String?   @db.Text
-  password              String?   @db.Text
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  scope                 String?  @db.Text
+  password              String?  @db.Text
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  @@index([userId])
   @@unique([providerId, accountId])
+  @@index([userId])
   @@map("account")
 }
 
@@ -82,12 +93,17 @@ model Verification {
 }
 
 // =====================
-//  MULTI-TENANT + RBAC
+//   MULTI-TENANT + RBAC
 // =====================
 
 enum RoleScope {
   CENTRAL // central platform roles (tenantId = null)
-  TENANT // tenant-scoped roles  (tenantId = specific tenant)
+  TENANT  // tenant-scoped roles  (tenantId = specific tenant)
+}
+
+enum EmailProvider {
+  RESEND
+  SMTP
 }
 
 model Tenant {
@@ -97,7 +113,7 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  isActive  Boolean  @default(true) // ✅ activation / deactivation
+  isActive Boolean @default(true) // ✅ activation / deactivation
 
   users       UserTenant[]
   userRoles   UserRole[]
@@ -107,11 +123,12 @@ model Tenant {
   roles       Role[]
   permissions Permission[]
 
-  // NEW: one settings + one branding row per tenant
-  appSettings   AppSettings?
-  brandSettings BrandSettings?
+  // one settings row per tenant
+  appSettings       AppSettings?
+  brandSettings     BrandSettings?
+  companySettings   CompanySettings?
+  emailSettings     EmailSettings?
 }
-
 
 model TenantDomain {
   id        String   @id @default(cuid())
@@ -136,7 +153,7 @@ model Role {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  userRoles     UserRole[]
+  userRoles   UserRole[]
   permissions RolePermission[]
 
   // key is unique PER tenant; global roles have tenantId = null
@@ -164,8 +181,7 @@ model RolePermission {
   roleId       Int
   permissionId Int
 
-  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
-
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@id([roleId, permissionId])
@@ -189,8 +205,8 @@ model UserRole {
   roleId   Int
   tenantId String? // null = central role
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
   tenant Tenant? @relation(fields: [tenantId], references: [id])
 
   @@unique([userId, roleId, tenantId])
@@ -238,9 +254,9 @@ model File {
   ownerId String
   owner   User   @relation("UserFiles", fields: [ownerId], references: [id])
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  isFavorite Boolean   @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  isFavorite Boolean  @default(false)
   deletedAt  DateTime?
 
   @@index([tenantId])
@@ -259,19 +275,23 @@ model FileManagerSettings {
   allowPublicSharing        Boolean @default(false)
 }
 
-model AppSettings {
-  id        String   @id @default(cuid())
-  tenantId  String?
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+// =====================
+//   APP SETTINGS
+// =====================
 
-  timezone               String   @default("UTC")
-  locale                 String   @default("en")
-  dateFormat             String   @default("yyyy-MM-dd")
-  timeFormat             String   @default("HH:mm")
-  weekStartsOn           Int      @default(1)        // 1 = Monday
-  defaultTheme           String   @default("system") // "light" | "dark" | "system"
-  allowUserThemeOverride Boolean  @default(true)
-  enforceTwoFactor       Boolean  @default(false)
+model AppSettings {
+  id       String  @id @default(cuid())
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  timezone               String  @default("UTC")
+  locale                 String  @default("en")
+  dateFormat             String  @default("yyyy-MM-dd")
+  timeFormat             String  @default("HH:mm")
+  weekStartsOn           Int     @default(1)        // 1 = Monday
+  defaultTheme           String  @default("system") // "light" | "dark" | "system"
+  allowUserThemeOverride Boolean @default(true)
+  enforceTwoFactor       Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -281,19 +301,63 @@ model AppSettings {
 }
 
 model BrandSettings {
-  id           String  @id @default(cuid())
-  
-  // Link to tenant (optional). If null, it applies to the Central Platform.
-  tenantId     String? @unique
-  tenant       Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  titleText    String  @default("Hive")
-  footerText   String  @default("Powered by Hive")
-  
-   logoLightUrl String? @db.LongText
+  titleText  String @default("Hive")
+  footerText String @default("Powered by Hive")
+
+  logoLightUrl String? @db.LongText
   logoDarkUrl  String? @db.LongText
   faviconUrl   String? @db.LongText
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  // NEW FIELD
+  sidebarIconUrl String? @db.LongText
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CompanySettings {
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  companyName        String
+  legalName          String?
+  email              String?
+  phone              String?
+  website            String?
+  addressLine1       String?
+  addressLine2       String?
+  city               String?
+  state              String?
+  postalCode         String?
+  country            String?
+  taxId              String?
+  registrationNumber String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EmailSettings {
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  provider     EmailProvider @default(RESEND)
+  fromName     String
+  fromEmail    String
+  replyToEmail String?
+
+  // Optional SMTP config – non-secret
+  smtpHost     String?
+  smtpPort     Int?
+  smtpUser     String?
+  smtpSecurity String? // "tls" | "ssl" | "none"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

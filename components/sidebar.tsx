@@ -27,7 +27,7 @@ type SidebarProps = {
     titleText?: string | null;
     logoLightUrl?: string | null;
     logoDarkUrl?: string | null;
-    faviconUrl?: string | null;
+    sidebarIconUrl?: string | null;
   };
 };
 
@@ -76,18 +76,43 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
   const has = (key: string) => permissions.includes(key);
   const hasAny = (keys: string[]) => keys.some((k) => permissions.includes(k));
 
+  // ---- PERMISSION GUARDS ---------------------------------------------------
+
+  // dashboard – dedicated key, but allow “big” admins to see it too
+  const canSeeDashboard =
+    has("dashboard.view") ||
+    hasAny(["view_security", "manage_security", "manage_tenants", "manage_billing"]);
+
   const canSeeTenants = has("manage_tenants");
+
   const canSeeSecurity = hasAny([
     "view_security",
     "manage_security",
     "manage_users",
     "manage_roles",
   ]);
-  const canSeeFiles = has("manage_files");
-  const canSeeBilling = has("manage_billing");
+
+  // files – new granular keys + legacy manage_files
+  const canSeeFiles = hasAny(["files.view", "manage_files"]);
+
+  // billing – main billing permission (you can add more keys here later)
+  const canSeeBilling = hasAny(["manage_billing", "billing.view"]);
+
+   // settings – brand / company / email / notifications / localization OR high-level admins
+  const canSeeSettings = hasAny([
+    "settings.brand.view",
+    "settings.company.view",
+    "settings.email.view",
+    "settings.notifications.view",
+    "settings.localization.view",
+    "manage_settings",     // 🔥 full settings manager
+    "manage_security",
+    "manage_tenants",
+  ]);
+
 
   const appTitle = brand?.titleText?.trim() || "Hive";
-  const { logoLightUrl, logoDarkUrl, faviconUrl } = brand || {};
+  const { logoLightUrl, logoDarkUrl, sidebarIconUrl } = brand || {};
 
   // Decide which logo to use based on theme (with sensible fallbacks)
   const isDark = resolvedTheme === "dark";
@@ -96,7 +121,7 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
     : logoLightUrl || logoDarkUrl || null;
 
   const hasLogo = !!logoForTheme;
-  const hasFavicon = !!faviconUrl;
+  const hasFavicon = !!sidebarIconUrl;
 
   const fallbackPill = (
     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-tr from-chart-1 to-chart-2 text-sm font-bold text-slate-950 shadow-lg shadow-chart-1/30">
@@ -109,7 +134,6 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
       className={cn(
         "relative flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground dark:bg-slate-950 dark:text-slate-50",
         collapsed ? "w-[4.25rem]" : "w-64",
-        // only animate width AFTER we’re mounted to avoid “close→open” flicker
         mounted && "transition-all duration-300"
       )}
     >
@@ -122,7 +146,7 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
               <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-2xl bg-background shadow-lg shadow-chart-1/30">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={faviconUrl!}
+                  src={sidebarIconUrl!}
                   alt={appTitle}
                   className="h-7 w-7 object-contain"
                 />
@@ -162,10 +186,13 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
       {/* Nav */}
       <nav className="mt-2 flex-1 space-y-1 px-2">
         {navItems.map((item) => {
+          // centralised visibility rules per nav entry
+          if (item.href === "/dashboard" && !canSeeDashboard) return null;
           if (item.href === "/tenants" && !canSeeTenants) return null;
           if (item.href === "/security" && !canSeeSecurity) return null;
           if (item.href === "/files" && !canSeeFiles) return null;
           if (item.href === "/billing" && !canSeeBilling) return null;
+          if (item.href === "/settings" && !canSeeSettings) return null;
 
           const Icon = item.icon;
           const active = pathname.startsWith(item.href);

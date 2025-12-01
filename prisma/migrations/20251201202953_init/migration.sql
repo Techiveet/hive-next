@@ -4,7 +4,8 @@ CREATE TABLE `user` (
     `name` TEXT NOT NULL,
     `email` VARCHAR(191) NOT NULL,
     `emailVerified` BOOLEAN NOT NULL DEFAULT false,
-    `image` TEXT NULL,
+    `image` LONGTEXT NULL,
+    `avatarUrl` LONGTEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
     `isActive` BOOLEAN NOT NULL DEFAULT true,
@@ -219,10 +220,54 @@ CREATE TABLE `BrandSettings` (
     `logoLightUrl` LONGTEXT NULL,
     `logoDarkUrl` LONGTEXT NULL,
     `faviconUrl` LONGTEXT NULL,
+    `sidebarIconUrl` LONGTEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
     UNIQUE INDEX `BrandSettings_tenantId_key`(`tenantId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `CompanySettings` (
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NULL,
+    `companyName` VARCHAR(191) NOT NULL,
+    `legalName` VARCHAR(191) NULL,
+    `email` VARCHAR(191) NULL,
+    `phone` VARCHAR(191) NULL,
+    `website` VARCHAR(191) NULL,
+    `addressLine1` VARCHAR(191) NULL,
+    `addressLine2` VARCHAR(191) NULL,
+    `city` VARCHAR(191) NULL,
+    `state` VARCHAR(191) NULL,
+    `postalCode` VARCHAR(191) NULL,
+    `country` VARCHAR(191) NULL,
+    `taxId` VARCHAR(191) NULL,
+    `registrationNumber` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `CompanySettings_tenantId_key`(`tenantId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `EmailSettings` (
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NULL,
+    `provider` ENUM('RESEND', 'SMTP') NOT NULL DEFAULT 'RESEND',
+    `fromName` VARCHAR(191) NOT NULL,
+    `fromEmail` VARCHAR(191) NOT NULL,
+    `replyToEmail` VARCHAR(191) NULL,
+    `smtpHost` VARCHAR(191) NULL,
+    `smtpPort` INTEGER NULL,
+    `smtpUser` VARCHAR(191) NULL,
+    `smtpSecurity` VARCHAR(191) NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `EmailSettings_tenantId_key`(`tenantId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -285,3 +330,9 @@ ALTER TABLE `AppSettings` ADD CONSTRAINT `AppSettings_tenantId_fkey` FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE `BrandSettings` ADD CONSTRAINT `BrandSettings_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `CompanySettings` ADD CONSTRAINT `CompanySettings_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `EmailSettings` ADD CONSTRAINT `EmailSettings_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

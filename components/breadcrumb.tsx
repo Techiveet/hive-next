@@ -34,7 +34,7 @@ type BreadcrumbProps = {
 export function Breadcrumb({
   items,
   includeHome = true,
-  homeHref = "/",
+  homeHref = "/dashboard",
   className,
 }: BreadcrumbProps) {
   const pathname = usePathname();

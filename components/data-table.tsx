@@ -69,6 +69,28 @@ declare module "@tanstack/react-table" {
   }
 }
 
+/* ---------------------- Company settings type --------------------- */
+export type CompanySettingsInfo = {
+  companyName?: string;
+  legalName?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  taxId?: string;
+  registrationNumber?: string;
+};
+
+/* ---------------------- Branding settings type -------------------- */
+export type BrandingSettingsInfo = {
+  darkLogoUrl?: string;
+};
+
 /* ----------------------------- Types & Props ----------------------------- */
 export type DataTableFilter = {
   columnId: string;
@@ -115,6 +137,12 @@ export interface DataTableProps<TData, TValue> {
 
   /** Optional date column id (e.g. "createdAt") for the date filter */
   dateFilterColumnId?: string;
+
+  /** Optional company settings for PDF + Print headers */
+  companySettings?: CompanySettingsInfo;
+
+  /** Optional branding settings (e.g. dark logo) for PDF + Print */
+  brandingSettings?: BrandingSettingsInfo;
 }
 
 /* ---------------------------- Column helpers ---------------------------- */
@@ -269,56 +297,30 @@ async function copyCsv<T>(table: TanTable<T>, rows?: Row<T>[]) {
   }
 }
 
-async function exportXlsx<T>(
-  table: TanTable<T>,
-  fileName = "export",
-  rows?: Row<T>[]
-) {
+async function loadImageAsDataUrl(url: string): Promise<string | null> {
   try {
-    const xlsx = (await import("xlsx")).default || (await import("xlsx"));
-    const cols = getExportableColumns(table);
-    const dataRows = rows ?? getSafeFilteredRows(table);
-    if (!dataRows.length) return;
+    const res = await fetch(url);
+    const blob = await res.blob();
 
-    const headers = [
-      "No.",
-      ...cols.map((c) =>
-        typeof c.columnDef.header === "string" ? c.columnDef.header : c.id
-      ),
-    ];
-
-    const data = dataRows.map((r, rowIndex) => [
-      String(rowIndex + 1),
-      ...cols.map((c) => {
-        const meta = (c.columnDef.meta || {}) as any;
-        const raw =
-          typeof meta.exportValue === "function"
-            ? meta.exportValue(r.original)
-            : r.getValue<any>(c.id);
-
-        return raw == null
-          ? ""
-          : typeof raw === "object"
-            ? JSON.stringify(raw)
-            : String(raw);
-      }),
-    ]);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const sheet = (xlsx.utils as any).aoa_to_sheet([headers, ...data]);
-    const wb = (xlsx.utils as any).book_new();
-    (xlsx.utils as any).book_append_sheet(wb, sheet, "Data");
-    (xlsx.writeFile as any)(wb, `${fileName}.xlsx`);
-  } catch (err) {
-    console.error(err);
-    toast.error("XLSX export needs: npm i xlsx");
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.error("Failed to load logo for PDF:", e);
+    return null;
   }
 }
 
+/* ------------------------ PDF export (with company) ------------------------ */
 async function exportPdf<T>(
   table: TanTable<T>,
   fileName = "export",
-  rowsArg?: Row<T>[]
+  rowsArg?: Row<T>[],
+  companySettings?: CompanySettingsInfo,
+  brandingSettings?: BrandingSettingsInfo
 ) {
   try {
     const jsPDFmod = await import("jspdf");
@@ -354,19 +356,91 @@ async function exportPdf<T>(
     ]);
 
     const doc = new JsPDFCtor({ unit: "mm", format: "a4" });
-    doc.setFontSize(12);
-    doc.text(fileName.toUpperCase(), 14, 18);
+    const pageWidth = doc.internal.pageSize.getWidth();
 
-    // 👇 NEW: control widths so table never runs off the page
+    // ---------- DARK LOGO (branding) ----------
+    let headerTop = 14;
+
+    if (brandingSettings?.darkLogoUrl) {
+      const dataUrl = await loadImageAsDataUrl(brandingSettings.darkLogoUrl);
+      if (dataUrl) {
+        const imgWidth = 32;
+        const imgHeight = 16;
+        const x = pageWidth - imgWidth - 12; // right padding 12
+        const y = 10;
+        doc.addImage(dataUrl, "PNG", x, y, imgWidth, imgHeight);
+        headerTop = Math.max(headerTop, y + imgHeight + 4);
+      }
+    }
+
+    // ---------- COMPANY HEADER ----------
+    const cs = companySettings;
+    let y = headerTop;
+
+    if (cs?.companyName || cs?.legalName) {
+      doc.setFontSize(13);
+      doc.text(cs.companyName || cs.legalName || fileName.toUpperCase(), 14, y);
+      y += 6;
+      if (cs.legalName && cs.legalName !== cs.companyName) {
+        doc.setFontSize(10);
+        doc.text(cs.legalName, 14, y);
+        y += 5;
+      }
+    } else {
+      doc.setFontSize(12);
+      doc.text(fileName.toUpperCase(), 14, y);
+      y += 6;
+    }
+
+    const addressParts = [
+      cs?.addressLine1,
+      cs?.addressLine2,
+      [cs?.city, cs?.state].filter(Boolean).join(", "),
+      [cs?.postalCode, cs?.country].filter(Boolean).join(" "),
+    ].filter((line) => !!line && line.trim().length);
+
+    if (addressParts.length) {
+      doc.setFontSize(9);
+      addressParts.forEach((line) => {
+        doc.text(line!, 14, y);
+        y += 4;
+      });
+    }
+
+    const contactParts = [
+      cs?.phone ? `Tel: ${cs.phone}` : null,
+      cs?.email ? `Email: ${cs.email}` : null,
+      cs?.website ? `Web: ${cs.website}` : null,
+    ].filter(Boolean);
+
+    if (contactParts.length) {
+      doc.setFontSize(9);
+      doc.text(contactParts.join("   "), 14, y);
+      y += 5;
+    }
+
+    const taxParts = [
+      cs?.taxId ? `Tax ID: ${cs.taxId}` : null,
+      cs?.registrationNumber ? `Reg No: ${cs.registrationNumber}` : null,
+    ].filter(Boolean);
+
+    if (taxParts.length) {
+      doc.setFontSize(9);
+      doc.text(taxParts.join("   "), 14, y);
+      y += 5;
+    }
+
+    y += 3; // gap before table
+
+    // 👇 Constrained table rendering (unchanged)
     const headerRow = head[0] as string[];
     const columnStyles: Record<number, any> = {};
 
     headerRow.forEach((label, idx) => {
       if (label === "No.") {
-        columnStyles[idx] = { cellWidth: 10 }; // tiny
+        columnStyles[idx] = { cellWidth: 10 };
       }
       if (label === "Permissions") {
-        // keep permissions at a fixed width so it wraps
         columnStyles[idx] = { cellWidth: 80 };
       }
     });
@@ -378,7 +452,7 @@ async function exportPdf<T>(
         fontSize: 8.5,
         cellPadding: 3,
         valign: "top",
-        overflow: "linebreak", // wrap text
+        overflow: "linebreak",
         cellWidth: "wrap",
       },
       headStyles: {
@@ -388,9 +462,9 @@ async function exportPdf<T>(
         textColor: 40,
       },
       alternateRowStyles: { fillColor: [250, 250, 250] },
-      margin: { top: 20, left: 12, right: 12, bottom: 12 },
-      tableWidth: "auto", // let jspdf-autotable respect columnStyles
-      columnStyles, // ⬅️ apply constrained widths
+      margin: { top: y, left: 12, right: 12, bottom: 12 },
+      tableWidth: "auto",
+      columnStyles,
     });
 
     doc.save(`${fileName}.pdf`);
@@ -400,15 +474,99 @@ async function exportPdf<T>(
   }
 }
 
-function printTable<T>(table: TanTable<T>, title = "Table", rows?: Row<T>[]) {
+/* -------------------------- Print (with company) ------------------------- */
+function buildCompanyHeaderHtml(
+  companySettings: CompanySettingsInfo | undefined,
+  brandingSettings: BrandingSettingsInfo | undefined,
+  title: string
+) {
+  const cs = companySettings;
+  const lines: string[] = [];
+
+  const name = cs?.companyName || cs?.legalName || title;
+  lines.push(`<h2 style="margin:0 0 4px 0;">${name}</h2>`);
+
+  if (cs?.legalName && cs.legalName !== cs.companyName) {
+    lines.push(
+      `<div style="font-size:11px;margin-bottom:4px;">${cs.legalName}</div>`
+    );
+  }
+
+  const addressParts = [
+    cs?.addressLine1,
+    cs?.addressLine2,
+    [cs?.city, cs?.state].filter(Boolean).join(", "),
+    [cs?.postalCode, cs?.country].filter(Boolean).join(" "),
+  ].filter((line) => !!line && line.trim().length);
+
+  if (addressParts.length) {
+    lines.push(
+      `<div style="font-size:10px;margin-bottom:2px;">${addressParts
+        .map((l) => l!)
+        .join("<br/>")}</div>`
+    );
+  }
+
+  const contactParts = [
+    cs?.phone ? `Tel: ${cs.phone}` : null,
+    cs?.email ? `Email: ${cs.email}` : null,
+    cs?.website ? `Web: ${cs.website}` : null,
+  ].filter(Boolean);
+
+  if (contactParts.length) {
+    lines.push(
+      `<div style="font-size:10px;margin-bottom:2px;">${contactParts.join(
+        " &nbsp; "
+      )}</div>`
+    );
+  }
+
+  const taxParts = [
+    cs?.taxId ? `Tax ID: ${cs.taxId}` : null,
+    cs?.registrationNumber ? `Reg No: ${cs.registrationNumber}` : null,
+  ].filter(Boolean);
+
+  if (taxParts.length) {
+    lines.push(
+      `<div style="font-size:10px;margin-bottom:6px;">${taxParts.join(
+        " &nbsp; "
+      )}</div>`
+    );
+  }
+
+  const textHtml = lines.join("");
+
+  const logoHtml = brandingSettings?.darkLogoUrl
+    ? `<div style="flex:0 0 auto;margin-left:24px;">
+         <img src="${brandingSettings.darkLogoUrl}" style="max-height:40px;object-fit:contain;" />
+       </div>`
+    : "";
+
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+      <div>${textHtml}</div>
+      ${logoHtml}
+    </div>
+  `;
+}
+
+function printTable<T>(
+  table: TanTable<T>,
+  title = "Table",
+  rows?: Row<T>[],
+  companySettings?: CompanySettingsInfo,
+  brandingSettings?: BrandingSettingsInfo
+) {
   const cols = getPrintableColumns(table);
   const dataRows = rows ?? getSafeFilteredRows(table);
   if (!dataRows.length) return;
 
   const thStyle =
     'style="text-align:left;padding:8px;border-bottom:1px solid #ddd"';
-  const tdStyle = 'style="padding:6px 8px;border-bottom:1px solid #f2f2f2"';
+  const tdStyle =
+    'style="padding:6px 8px;border-bottom:1px solid #f2f2f2;vertical-align:top;"';
 
+  // Header cells
   const th =
     `<th ${thStyle}>No.</th>` +
     cols
@@ -420,6 +578,7 @@ function printTable<T>(table: TanTable<T>, title = "Table", rows?: Row<T>[]) {
       )
       .join("");
 
+  // Body rows
   const trs = dataRows
     .map((r, rowIndex) => {
       const noCell = `<td ${tdStyle}>${rowIndex + 1}</td>`;
@@ -430,12 +589,14 @@ function printTable<T>(table: TanTable<T>, title = "Table", rows?: Row<T>[]) {
             typeof meta.exportValue === "function"
               ? meta.exportValue(r.original)
               : r.getValue<any>(c.id);
+
           const s =
             raw == null
               ? ""
               : typeof raw === "object"
-                ? JSON.stringify(raw)
-                : String(raw);
+              ? JSON.stringify(raw)
+              : String(raw);
+
           return `<td ${tdStyle}>${s}</td>`;
         })
         .join("");
@@ -445,12 +606,21 @@ function printTable<T>(table: TanTable<T>, title = "Table", rows?: Row<T>[]) {
 
   const w = window.open("", "_blank");
   if (!w) return;
+
+  const headerHtml = buildCompanyHeaderHtml(
+    companySettings,
+    brandingSettings,
+    title
+  );
+
   w.document.write(`
     <html>
-      <head><title>${title}</title></head>
-      <body>
-        <h3>${title}</h3>
-        <table style="border-collapse:collapse;width:100%">
+      <head>
+        <title>${title}</title>
+      </head>
+      <body style="font-family:system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+        ${headerHtml}
+        <table style="border-collapse:collapse;width:100%;font-size:12px;">
           <thead><tr>${th}</tr></thead>
           <tbody>${trs}</tbody>
         </table>
@@ -462,6 +632,7 @@ function printTable<T>(table: TanTable<T>, title = "Table", rows?: Row<T>[]) {
   w.print();
   w.close();
 }
+
 
 /* ----------------------- Pagination helpers ----------------------- */
 function buildPageItems(current: number, totalPages: number, windowSize = 2) {
@@ -519,6 +690,8 @@ export function DataTable<TData, TValue>({
   className,
   scrollTo = "body",
   dateFilterColumnId,
+  companySettings,
+  brandingSettings,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -708,8 +881,11 @@ export function DataTable<TData, TValue>({
     setSorting([]);
     table.resetRowSelection();
     if (searchColumnId) {
-      if (manual) setSearchValue("");
-      else table.getColumn(searchColumnId)?.setFilterValue("");
+      if (manual) {
+        setSearchValue("");
+      } else {
+        table.getColumn(searchColumnId)?.setFilterValue("");
+      }
     }
     if (manual) setPageIndexState(0);
     else table.setPageIndex(0);
@@ -987,11 +1163,21 @@ export function DataTable<TData, TValue>({
               <span className="hidden sm:inline">Copy</span>
             </Button>
 
-            {/* NEW: GLOBAL PRINT (all filtered rows) */}
+            {/* GLOBAL PRINT (all filtered rows) */}
             <Button
               variant="outline"
               className="h-9 gap-2"
-              onClick={() => withBusy(() => printTable(table, fileName))}
+              onClick={() =>
+                withBusy(() =>
+                  printTable(
+                    table,
+                    fileName,
+                    undefined,
+                    companySettings,
+                    brandingSettings
+                  )
+                )
+              }
             >
               <Printer className="h-4 w-4" />
               <span className="hidden sm:inline">Print</span>
@@ -1016,7 +1202,17 @@ export function DataTable<TData, TValue>({
                   XLSX
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  onClick={() => withBusy(() => exportPdf(table, fileName))}
+                  onClick={() =>
+                    withBusy(() =>
+                      exportPdf(
+                        table,
+                        fileName,
+                        undefined,
+                        companySettings,
+                        brandingSettings
+                      )
+                    )
+                  }
                 >
                   PDF
                 </DropdownMenuItem>
@@ -1269,7 +1465,15 @@ export function DataTable<TData, TValue>({
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     onClick={() =>
-                      withBusy(() => exportPdf(table, fileName, selectedRows))
+                      withBusy(() =>
+                        exportPdf(
+                          table,
+                          fileName,
+                          selectedRows,
+                          companySettings,
+                          brandingSettings
+                        )
+                      )
                     }
                   >
                     PDF
@@ -1283,7 +1487,15 @@ export function DataTable<TData, TValue>({
                 variant="ghost"
                 className="h-8 rounded-full px-3 text-white hover:bg-white/20 dark:text-black dark:hover:bg-black/10"
                 onClick={() =>
-                  withBusy(() => printTable(table, fileName, selectedRows))
+                  withBusy(() =>
+                    printTable(
+                      table,
+                      fileName,
+                      selectedRows,
+                      companySettings,
+                      brandingSettings
+                    )
+                  )
                 }
               >
                 <Printer className="mr-2 h-3.5 w-3.5" />

@@ -13,7 +13,7 @@ type DashboardShellProps = {
     titleText?: string | null;
     logoLightUrl?: string | null;
     logoDarkUrl?: string | null;
-    faviconUrl?: string | null;
+    sidebarIconUrl?: string | null;
   };
   children: ReactNode;
 };

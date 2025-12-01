@@ -85,9 +85,13 @@ export const UserAccountEmail = ({
   const appUrl =
     loginUrl || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-  const logoURL = `${
-    process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-  }/logo/logo.png`;
+  // STATIC LOGO: use a fixed logo under your app URL
+  const baseUrl =
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.APP_URL ||
+    "http://localhost:3000";
+
+  const logoURL = `${baseUrl.replace(/\/+$/, "")}/logo/logo.png`;
 
   const statusIsActive = status === "ACTIVE";
   const displayName = name || email;
@@ -110,7 +114,7 @@ export const UserAccountEmail = ({
       "Your account has been deactivated. You will no longer be able to sign in until an administrator re-activates it.";
   }
 
-  const showPasswordBlock = !!password; // only when we explicitly pass it
+  const showPasswordBlock = !!password;
   const showRoleBlock = !!roleName;
 
   const hasUpdateDetails =
@@ -142,7 +146,7 @@ export const UserAccountEmail = ({
               <Column>
                 <Heading style={styles.headerTitle}>{displayTenant}</Heading>
                 <Text style={styles.headerSubtitle}>
-                  Secure access & role-based administration.
+                  Secure access &amp; role-based administration.
                 </Text>
               </Column>
             </Row>
@@ -159,11 +163,11 @@ export const UserAccountEmail = ({
             <Text style={styles.contentText}>{intro}</Text>
 
             {tenantName && (
-  <Text style={styles.contentText}>
-    Tenant / workspace:{" "}
-    <span style={styles.tenantNameBadge}>{displayTenant}</span>
-  </Text>
-)}
+              <Text style={styles.contentText}>
+                Tenant / workspace:{" "}
+                <span style={styles.tenantNameBadge}>{displayTenant}</span>
+              </Text>
+            )}
 
             {/* STATUS + ROLE */}
             <Row style={{ marginTop: 8, marginBottom: 4 }}>
@@ -242,8 +246,7 @@ export const UserAccountEmail = ({
                 </Text>
                 <Text style={styles.credentialsText}>
                   <strong>
-                    {kind === "created" ? "Temporary password" : "New password"}
-                    :
+                    {kind === "created" ? "Temporary password" : "New password"}:
                   </strong>{" "}
                   <span style={styles.code}>{password}</span>
                 </Text>
@@ -486,14 +489,12 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#9ca3af",
   },
   tenantNameBadge: {
-  display: "inline-block",
-  padding: "2px 8px",
-  borderRadius: 999,
-  backgroundColor: "#eef2ff",
-  color: "#3730a3",
-  fontSize: 11,
-  fontWeight: 600,
-},
-
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: 999,
+    backgroundColor: "#eef2ff",
+    color: "#3730a3",
+    fontSize: 11,
+    fontWeight: 600,
+  },
 };
-
