@@ -56,7 +56,7 @@ export async function createCentralUser(data: UserFormInput) {
   if (data.makeCentralSuperadmin) {
     const role = await prisma.role.findFirst({
       where: { key: "central_superadmin", tenantId: null },
-    }); // ✅ use findFirst + full where
+    });
     if (!role) throw new Error("central_superadmin role missing");
 
     await assertSingleCentralSuperadmin(user.id);
@@ -108,7 +108,7 @@ export async function updateCentralUser(
   if (typeof data.makeCentralSuperadmin === "boolean") {
     const role = await prisma.role.findFirst({
       where: { key: "central_superadmin", tenantId: null },
-    }); // ✅ same fix here
+    });
     if (!role) throw new Error("central_superadmin role missing");
 
     const existingRole = await prisma.userRole.findFirst({
@@ -131,21 +131,14 @@ export async function updateCentralUser(
     }
 
     if (!data.makeCentralSuperadmin && existingRole) {
-      await prisma.userRole
-        .delete({
-          where: {
-            roleId_userId_tenantId: {
-              roleId: role.id,
-              userId,
-              tenantId: null,
-            },
-          },
-        })
-        .catch(async () => {
-          await prisma.userRole.deleteMany({
-            where: { roleId: role.id, userId, tenantId: null },
-          });
-        });
+      // ✅ simpler + type-safe: just use deleteMany with a normal filter
+      await prisma.userRole.deleteMany({
+        where: {
+          roleId: role.id,
+          userId,
+          tenantId: null,
+        },
+      });
     }
   }
 
