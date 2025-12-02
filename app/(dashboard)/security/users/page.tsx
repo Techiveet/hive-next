@@ -1,7 +1,7 @@
 // app/(dashboard)/security/users/page.tsx
 
 import { Breadcrumb } from "@/components/breadcrumb";
-import { UsersClient } from "./_components/users-tab-client"; // your existing client component
+import UsersClient from "./_components/users-tab-client";
 import { getCurrentSession } from "@/lib/auth-server";
 import { getCurrentUserPermissions } from "@/lib/rbac";
 import { headers } from "next/headers";
