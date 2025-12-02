@@ -1,3 +1,4 @@
+// app/(dashboard)/security/users/users-actions.ts
 "use server";
 
 import {
@@ -56,7 +57,7 @@ async function getTenantMeta(tenantId?: string | null) {
 }
 
 /* ------------------------------------------------------------------
- * Auth helper
+ * Auth + permission helper
  * ------------------------------------------------------------------ */
 
 async function authorizeUserAction(
@@ -107,17 +108,15 @@ async function authorizeUserAction(
 }
 
 /* ------------------------------------------------------------------
- * Password-setup token helpers
+ * Password-setup token helpers (our own table)
  * ------------------------------------------------------------------ */
 
-/** Generate raw token + expiry (24h) */
 function generatePasswordSetupToken() {
   const token = crypto.randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24);
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24); // 24h
   return { token, expiresAt };
 }
 
-/** One active token per user */
 async function issuePasswordSetupToken(userId: string) {
   const { token, expiresAt } = generatePasswordSetupToken();
 
@@ -126,10 +125,40 @@ async function issuePasswordSetupToken(userId: string) {
   });
 
   await prisma.passwordSetupToken.create({
-    data: { userId, token, expiresAt },
+    data: {
+      userId,
+      token,
+      expiresAt,
+    },
   });
 
   return { token, expiresAt };
+}
+
+/* ------------------------------------------------------------------
+ * Shared password-change helper
+ * ------------------------------------------------------------------ */
+
+/**
+ * Change a user's password via Better Auth.
+ * Used both from the users actions (edit user) and from /api/setup-password.
+ */
+export async function changeUserPasswordInternal(
+  userId: string,
+  newPassword: string
+) {
+  const res = await auth.api.changePassword({
+    body: {
+      userId,
+      newPassword,
+    },
+    asResponse: false,
+  });
+
+  if (res?.error) {
+    console.error("[changeUserPasswordInternal] error", res.error);
+    throw new Error("CHANGE_PASSWORD_FAILED");
+  }
 }
 
 /* ------------------------------------------------------------------
@@ -143,7 +172,6 @@ export async function createOrUpdateUserAction(rawData: unknown) {
   }
   const input = parsed.data;
 
-  // Guard: create vs update
   await authorizeUserAction(
     input.tenantId ?? null,
     input.id ? ["users.update"] : ["users.create"]
@@ -199,7 +227,7 @@ export async function createOrUpdateUserAction(rawData: unknown) {
   const plainPassword = (input.password ?? "").trim();
   const normalizedEmail = input.email.toLowerCase().trim();
 
-  // URL used in the email for first-time login
+  // For brand-new users we send a /setup-password link
   let passwordSetupUrl: string | undefined;
 
   if (input.id) {
@@ -211,7 +239,6 @@ export async function createOrUpdateUserAction(rawData: unknown) {
     if (!existing) throw new Error("USER_NOT_FOUND");
 
     changedName = existing.name !== input.name;
-    changedPassword = false; // we DO NOT change password here
 
     user = await prisma.user.update({
       where: { id: existing.id },
@@ -226,6 +253,11 @@ export async function createOrUpdateUserAction(rawData: unknown) {
       input.tenantId ? ur.tenantId === input.tenantId : ur.tenantId === null
     );
     changedRole = existingRoleForContext?.roleId !== input.roleId;
+
+    if (plainPassword) {
+      await changeUserPasswordInternal(existing.id, plainPassword);
+      changedPassword = true;
+    }
   } else {
     /* ---------------------- CREATE USER ---------------------- */
     if (!plainPassword) throw new Error("PASSWORD_REQUIRED_FOR_NEW_USER");
@@ -235,7 +267,7 @@ export async function createOrUpdateUserAction(rawData: unknown) {
     });
     if (existingEmail) throw new Error("EMAIL_IN_USE");
 
-    // Let Better Auth create user + credential account
+    // Better Auth creates the account with the initial password
     const signUpResult = await auth.api.signUpEmail({
       body: {
         email: normalizedEmail,
@@ -250,7 +282,6 @@ export async function createOrUpdateUserAction(rawData: unknown) {
       throw new Error("FAILED_TO_CREATE_USER_AUTH");
     }
 
-    // Patch extra fields via Prisma
     user = await prisma.user.update({
       where: { id: signUpResult.user.id },
       data: {
@@ -265,7 +296,7 @@ export async function createOrUpdateUserAction(rawData: unknown) {
 
     changedPassword = true;
 
-    // 🔐 Issue our own password-setup token for this brand-new user
+    // 🔐 Issue our own password-setup token & build URL
     const { token } = await issuePasswordSetupToken(user.id);
 
     const baseAppUrl =
@@ -319,7 +350,7 @@ export async function createOrUpdateUserAction(rawData: unknown) {
   const status = user.isActive ? "ACTIVE" : "INACTIVE";
   const kind = input.id ? ("updated" as const) : ("created" as const);
 
-  // ✅ We no longer send the plain password in the email
+  // No raw password in email; new users get the setup link
   const passwordForEmail = undefined;
 
   await sendEmail({
@@ -337,8 +368,8 @@ export async function createOrUpdateUserAction(rawData: unknown) {
       changedRole: kind === "updated" ? changedRole : undefined,
       tenantName,
       tenantDomain,
-      // 👇 brand-new users get the setup-password link
-      loginUrl: kind === "created" ? passwordSetupUrl ?? loginUrl : loginUrl,
+      // For brand-new users, button → /setup-password?token=...
+      loginUrl: passwordSetupUrl ?? loginUrl,
     }),
   });
 }

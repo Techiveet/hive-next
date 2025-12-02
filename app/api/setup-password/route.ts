@@ -1,7 +1,7 @@
 // app/api/setup-password/route.ts
 
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { changeUserPasswordInternal } from "@/app/(dashboard)/security/users/users-actions";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     const json = await req.json();
     const { token, password } = bodySchema.parse(json);
 
-    // 1) Look up our local password-setup token
+    // Look up our own setup token
     const record = await prisma.passwordSetupToken.findUnique({
       where: { token },
       include: { user: true },
@@ -28,41 +28,21 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2) Check expiry
     if (record.expiresAt < new Date()) {
       await prisma.passwordSetupToken.delete({ where: { id: record.id } });
-
       return NextResponse.json(
         { error: "TOKEN_EXPIRED", message: "This link has expired." },
         { status: 400 }
       );
     }
 
-    // 3) Tell Better Auth to reset the password
-    const res = await auth.api.resetPassword({
-      body: {
-        token,
-        newPassword: password,
-      },
-      asResponse: false,
+    // ✅ Use the same Better Auth flow as user updates
+    await changeUserPasswordInternal(record.userId, password);
+
+    // One-shot token – remove after success
+    await prisma.passwordSetupToken.delete({
+      where: { id: record.id },
     });
-
-    // 👇 FIX: Cast 'res' to any to bypass strict type checking
-    // The library likely throws on error (handled by catch below),
-    // but this check covers cases where it might return an error object.
-    if ((res as any)?.error) {
-      console.error("[setup-password] resetPassword error", (res as any).error);
-      return NextResponse.json(
-        {
-          error: "RESET_PASSWORD_FAILED",
-          message: "Unable to set password.",
-        },
-        { status: 400 }
-      );
-    }
-
-    // 4) Cleanup: token is one-time use
-    await prisma.passwordSetupToken.delete({ where: { id: record.id } });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

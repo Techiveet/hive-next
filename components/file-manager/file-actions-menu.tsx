@@ -56,7 +56,7 @@ export function FileActionsMenu({
 
   const handleDeleteForever = () => {
     startTransition(() => deleteFilePermanently(fileId));
-  };
+  };``
 
   return (
     <div className="flex items-center gap-1">
