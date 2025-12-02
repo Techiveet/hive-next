@@ -85,6 +85,17 @@ type Props = {
   brandingSettings?: BrandingSettingsInfo | null;
 };
 
+type UsersClientProps = {
+  users: any[];
+  canManageUsers: boolean;
+  companySettings: any;
+  brandingSettings: any;
+};
+
+export default function UsersClient(props: UsersClientProps) {
+  // your existing implementation
+}
+
 // Helpers
 function generateStrongPassword(length = 12) {
   const chars =
