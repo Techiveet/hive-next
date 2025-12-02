@@ -283,7 +283,7 @@ export default async function FilesPage(props: {
     where: { id: "global" },
   });
 
-  const defaultExtensions = [
+ const defaultExtensions = [
     ".pdf",
     ".doc",
     ".docx",
@@ -299,14 +299,25 @@ export default async function FilesPage(props: {
   ];
 
   const maxFileSizeMb = dbSettings?.maxFileSizeMb ?? 50;
-  const allowedExtensions = dbSettings?.allowedExtensions?.length
-    ? dbSettings.allowedExtensions
-    : defaultExtensions;
 
-  const autoEmptyRecycleBinDays = dbSettings?.autoEmptyRecycleBinDays ?? 30;
-  const requireDeleteConfirmation =
-    dbSettings?.requireDeleteConfirmation ?? true;
-  const allowPublicSharing = dbSettings?.allowPublicSharing ?? false;
+
+  // Safely coerce DB value -> string[]
+  const rawAllowed = dbSettings?.allowedExtensions as unknown;
+
+  const dbAllowedExtensions =
+    Array.isArray(rawAllowed)
+      ? rawAllowed.filter((ext): ext is string => typeof ext === "string")
+      : typeof rawAllowed === "string"
+      ? rawAllowed
+          .split(",")
+          .map((ext) => ext.trim())
+          .filter(Boolean)
+      : null;
+
+  const allowedExtensions =
+    dbAllowedExtensions && dbAllowedExtensions.length > 0
+      ? dbAllowedExtensions
+      : defaultExtensions;
 
   /* ---------- Recents / filtered / section files ---------- */
 
