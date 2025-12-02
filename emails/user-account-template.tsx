@@ -124,6 +124,12 @@ export const UserAccountEmail = ({
     kind === "updated" &&
     !!(changedName && changedPassword && changedRole);
 
+      // NEW: label for button
+  const ctaLabel =
+    kind === "created" && statusIsActive
+      ? "Set your password"
+      : "Open Admin Panel";
+
   return (
     <Html>
       <Head />
@@ -258,11 +264,11 @@ export const UserAccountEmail = ({
             )}
 
             {/* CTA */}
-            {statusIsActive && (
-              <Button href={appUrl} style={styles.primaryButton}>
-                Open Admin Panel
-              </Button>
-            )}
+           {statusIsActive && (
+        <Button href={appUrl} style={styles.primaryButton}>
+          {ctaLabel}
+        </Button>
+      )}
 
             {/* FOOTER NOTE */}
             <Text style={styles.smallNote}>

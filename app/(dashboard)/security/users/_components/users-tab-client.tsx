@@ -65,7 +65,7 @@ export type UserForClient = {
   email: string;
   createdAt: string;
   isActive: boolean;
-  avatarUrl?: string | null; // 🔥 avatar from DB
+  avatarUrl?: string | null; // avatar from DB
   userRoles: {
     id: string;
     role: { key: string; name: string; scope: string };
@@ -85,8 +85,9 @@ type Props = {
   brandingSettings?: BrandingSettingsInfo | null;
 };
 
+// --- Helpers ---
 
-// Helpers
+// Strong password generator (only used on interaction – no SSR impact)
 function generateStrongPassword(length = 12) {
   const chars =
     "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*";
@@ -102,6 +103,22 @@ function initials(name?: string | null, email?: string) {
   const parts = src.split(/\s+/);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return src[0]!.toUpperCase();
+}
+
+// 🔐 Hydration-safe date formatter (same result on server & client)
+const createdAtFormatter = new Intl.DateTimeFormat("en-GB", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  timeZone: "UTC",
+});
+
+function formatCreatedAt(dateStr: string) {
+  try {
+    return createdAtFormatter.format(new Date(dateStr));
+  } catch {
+    return dateStr;
+  }
 }
 
 export function UsersTabClient({
@@ -141,7 +158,7 @@ export function UsersTabClient({
   );
   const [viewUser, setViewUser] = React.useState<UserForClient | null>(null);
 
-  // 👇 add this
+  // detect if currently editing a superadmin for this context
   const isSuperadminEditing = React.useMemo(
     () =>
       editingUser
@@ -160,7 +177,7 @@ export function UsersTabClient({
   const [formPassword, setFormPassword] = React.useState("");
   const [formConfirmPassword, setFormConfirmPassword] = React.useState("");
   const [formRoleId, setFormRoleId] = React.useState<number | "">("");
-  const [formAvatar, setFormAvatar] = React.useState<string | null>(null); // 🔥 avatar url
+  const [formAvatar, setFormAvatar] = React.useState<string | null>(null); // avatar url
 
   const [showPassword, setShowPassword] = React.useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
@@ -221,7 +238,7 @@ export function UsersTabClient({
     setShowPassword(false);
     setShowConfirmPassword(false);
 
-    // 🔍 detect if THIS user is superadmin in current context
+    // detect if THIS user is superadmin in current context
     const isSuper = tenantId
       ? user.userRoles.some(
           (ur) =>
@@ -232,7 +249,7 @@ export function UsersTabClient({
         );
 
     if (isSuper) {
-      // 🔒 fake masked password, but we will NOT send it to backend
+      // fake masked password, but we will NOT send it to backend
       setFormPassword("********");
       setFormConfirmPassword("********");
     } else {
@@ -240,7 +257,7 @@ export function UsersTabClient({
       setFormConfirmPassword("");
     }
 
-    // 🔥 resolve roleId using centralRoleMap (as you already did)
+    // resolve roleId using centralRoleMap
     const primaryRoleName = getPrimaryRoleName(user);
     const roleEntry = Object.entries(centralRoleMap).find(
       ([, name]) => name === primaryRoleName
@@ -265,7 +282,7 @@ export function UsersTabClient({
     setShowConfirmPassword(true);
   }
 
-  // ✅ File Manager avatar picker (same pattern as Brand Settings)
+  // File Manager avatar picker
   function handlePickAvatar() {
     if (typeof window === "undefined") return;
 
@@ -288,7 +305,7 @@ export function UsersTabClient({
     if (isEdit && !canUpdateUsers) return;
     if (!isEdit && !canCreateUsers) return;
 
-    // 🔒 if editing superadmin, we completely skip password change
+    // if editing superadmin, we completely skip password change
     const skipPasswordChange = isEdit && isSuperadminEditing;
 
     if (
@@ -315,7 +332,7 @@ export function UsersTabClient({
           id: editingUser?.id ?? null,
           name: formName.trim(),
           email: formEmail.trim(),
-          password: passwordToSend, // ✅ uses the logic above
+          password: passwordToSend,
           roleId: Number(formRoleId),
           tenantId: tenantId ?? null,
           avatarUrl: formAvatar,
@@ -464,10 +481,10 @@ export function UsersTabClient({
       {
         id: "createdAt",
         header: "Joined",
-        accessorFn: (row) => new Date(row.createdAt).toLocaleDateString(),
+        accessorFn: (row) => formatCreatedAt(row.createdAt),
         cell: ({ row }) => (
           <span className="text-xs text-muted-foreground">
-            {new Date(row.original.createdAt).toLocaleDateString()}
+            {formatCreatedAt(row.original.createdAt)}
           </span>
         ),
       },
@@ -728,7 +745,7 @@ export function UsersTabClient({
                       )
                     }
                     required
-                    disabled={isSuperadminEditing} // 🔒 lock for superadmin
+                    disabled={isSuperadminEditing}
                   >
                     {/* Normal users: allow selection */}
                     {!isSuperadminEditing && (
@@ -761,7 +778,7 @@ export function UsersTabClient({
             </div>
 
             {/* Passwords */}
-            <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
+            <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs font-semibold uppercase text-muted-foreground">
                   Credentials
@@ -791,13 +808,13 @@ export function UsersTabClient({
                       value={formPassword}
                       onChange={(e) => setFormPassword(e.target.value)}
                       placeholder={editingUser ? "Leave blank to keep" : ""}
-                      disabled={isSuperadminEditing && !!editingUser} // 🔒 lock for superadmin
+                      disabled={isSuperadminEditing && !!editingUser}
                     />
                     <button
                       type="button"
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
                       onClick={() => setShowPassword((v) => !v)}
-                      disabled={isSuperadminEditing && !!editingUser} // 🔒 lock toggle too
+                      disabled={isSuperadminEditing && !!editingUser}
                     >
                       {showPassword ? (
                         <EyeOff className="h-4 w-4" />
@@ -819,13 +836,13 @@ export function UsersTabClient({
                       className="w-full rounded border bg-background p-2 pr-10 text-sm"
                       value={formConfirmPassword}
                       onChange={(e) => setFormConfirmPassword(e.target.value)}
-                      disabled={isSuperadminEditing && !!editingUser} // 🔒
+                      disabled={isSuperadminEditing && !!editingUser}
                     />
                     <button
                       type="button"
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
                       onClick={() => setShowConfirmPassword((v) => !v)}
-                      disabled={isSuperadminEditing && !!editingUser} // 🔒
+                      disabled={isSuperadminEditing && !!editingUser}
                     >
                       {showConfirmPassword ? (
                         <EyeOff className="h-4 w-4" />
@@ -912,7 +929,7 @@ export function UsersTabClient({
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <span>
-                    Joined {new Date(viewUser.createdAt).toLocaleDateString()}
+                    Joined {formatCreatedAt(viewUser.createdAt)}
                   </span>
                 </div>
               </div>

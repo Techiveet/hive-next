@@ -176,9 +176,9 @@ export default async function FilesPage(props: {
     | FileFilterType
     | undefined;
 
-  const sectionParam = toSingle(
-    rawSearchParams.section
-  ) as SectionType | undefined;
+  const sectionParam = toSingle(rawSearchParams.section) as
+    | SectionType
+    | undefined;
 
   const viewParam = toSingle(rawSearchParams.view) as ViewType | undefined;
 
@@ -244,8 +244,8 @@ export default async function FilesPage(props: {
   // Counters for sections
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-  const [favoritesCount, recycleBinCount, recentFilesCount] =
-    await Promise.all([
+  const [favoritesCount, recycleBinCount, recentFilesCount] = await Promise.all(
+    [
       prisma.file.count({
         where: {
           tenantId: tenant.id,
@@ -269,7 +269,8 @@ export default async function FilesPage(props: {
           updatedAt: { gte: thirtyDaysAgo },
         },
       }),
-    ]);
+    ]
+  );
 
   /* ---------- Global storage/settings from DB ---------- */
 
@@ -297,10 +298,9 @@ export default async function FilesPage(props: {
   // Safely coerce DB value -> string[]
   const rawAllowed = dbSettings?.allowedExtensions as unknown;
 
-  const dbAllowedExtensions =
-    Array.isArray(rawAllowed)
-      ? rawAllowed.filter((ext): ext is string => typeof ext === "string")
-      : typeof rawAllowed === "string"
+  const dbAllowedExtensions = Array.isArray(rawAllowed)
+    ? rawAllowed.filter((ext): ext is string => typeof ext === "string")
+    : typeof rawAllowed === "string"
       ? rawAllowed
           .split(",")
           .map((ext) => ext.trim())
@@ -371,9 +371,7 @@ export default async function FilesPage(props: {
   const recents = await prisma.file.findMany({
     where: recentsBaseWhere,
     orderBy:
-      section === "recent"
-        ? { updatedAt: "desc" }
-        : { createdAt: "desc" },
+      section === "recent" ? { updatedAt: "desc" } : { createdAt: "desc" },
     skip: (recentsPage - 1) * RECENTS_PAGE_SIZE,
     take: RECENTS_PAGE_SIZE,
   });
@@ -456,9 +454,14 @@ export default async function FilesPage(props: {
               </p>
             </div>
 
-            <button className="inline-flex h-8 w-8 items-center justify-center rounded-full border bg-background text-[11px] text-muted-foreground shadow-sm transition hover:bg-accent hover:text-foreground">
+            <Link
+              href="/files?section=settings"
+              className="inline-flex h-8 w-8 items-center justify-center rounded-full border bg-background text-[11px] text-muted-foreground shadow-sm transition hover:bg-accent hover:text-foreground"
+              aria-label="Open file manager settings"
+              title="File Manager Settings"
+            >
               <Settings2 className="h-3.5 w-3.5" />
-            </button>
+            </Link>
           </header>
 
           <div className="space-y-4 px-5 py-4">
@@ -545,9 +548,9 @@ export default async function FilesPage(props: {
             </div>
 
             {/* Logout placeholder */}
-            <button className="inline-flex w-full items-center justify-start gap-2 rounded-xl border bg-background px-3 py-2 text-[11px] font-medium text-muted-foreground shadow-sm transition hover:bg-destructive/5 hover:text-destructive">
+            {/* <button className="inline-flex w-full items-center justify-start gap-2 rounded-xl border bg-background px-3 py-2 text-[11px] font-medium text-muted-foreground shadow-sm transition hover:bg-destructive/5 hover:text-destructive">
               Logout
-            </button>
+            </button> */}
           </div>
         </section>
 
@@ -696,20 +699,20 @@ export default async function FilesPage(props: {
                       {section === "favorites"
                         ? "Favourite Files"
                         : section === "recycle-bin"
-                        ? "Recycle Bin"
-                        : section === "recent"
-                        ? "Recent Files"
-                        : typeParam === "images"
-                        ? "Images"
-                        : typeParam === "videos"
-                        ? "Videos"
-                        : typeParam === "docs"
-                        ? "Docs"
-                        : typeParam === "audio"
-                        ? "Audio Files"
-                        : hasSearch
-                        ? `Search results for "${searchQuery}"`
-                        : "Recents"}
+                          ? "Recycle Bin"
+                          : section === "recent"
+                            ? "Recent Files"
+                            : typeParam === "images"
+                              ? "Images"
+                              : typeParam === "videos"
+                                ? "Videos"
+                                : typeParam === "docs"
+                                  ? "Docs"
+                                  : typeParam === "audio"
+                                    ? "Audio Files"
+                                    : hasSearch
+                                      ? `Search results for "${searchQuery}"`
+                                      : "Recents"}
                     </p>
 
                     <div className="flex items-center gap-2">
@@ -765,13 +768,13 @@ export default async function FilesPage(props: {
                         return (
                           <div
                             key={file.id}
-                            className="group flex items-center justify-between rounded-xl border bg-muted/60 px-3 py-2 text-xs shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-muted"
+                            className="group flex items-center justify-between rounded-xl border bg-muted/60 px-3 py-2 text-xs shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-muted overflow-hidden"
                           >
                             <Link
                               href={`/files?fileId=${file.id}&recentsPage=${recentsPage}${sectionQueryPart}${typeQuery}${searchQueryPart}${viewQueryPart}`}
-                              className="flex flex-1 items-center gap-3"
+                              className="flex min-w-0 flex-1 items-center gap-3"
                             >
-                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-background">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-background">
                                 {previewType === "image" ? (
                                   <ImageIcon className="h-4 w-4 text-violet-500" />
                                 ) : previewType === "video" ? (
@@ -782,23 +785,27 @@ export default async function FilesPage(props: {
                                   <FileText className="h-4 w-4 text-amber-500" />
                                 )}
                               </div>
-                              <div className="flex flex-1 items-center justify-between gap-3">
+                              <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
                                 <span className="truncate font-medium">
                                   {file.name}
                                 </span>
-                                <span className="whitespace-nowrap text-[10px] text-muted-foreground">
-                                  {formatBytes(file.size)}
-                                </span>
+                                {!hasDetails && (
+                                  <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
+                                    {formatBytes(file.size)}
+                                  </span>
+                                )}
                               </div>
                             </Link>
 
-                            <FileActionsMenu
-                              fileId={file.id}
-                              fileName={file.name}
-                              folderId={file.folderId}
-                              isFavorite={file.isFavorite}
-                              isTrashed={!!file.deletedAt}
-                            />
+                            <div className="shrink-0 pl-2">
+                              <FileActionsMenu
+                                fileId={file.id}
+                                fileName={file.name}
+                                folderId={file.folderId}
+                                isFavorite={file.isFavorite}
+                                isTrashed={!!file.deletedAt}
+                              />
+                            </div>
                           </div>
                         );
                       })}
@@ -810,13 +817,13 @@ export default async function FilesPage(props: {
                         return (
                           <div
                             key={file.id}
-                            className="group flex items-center justify-between rounded-2xl border bg-muted/60 px-3 py-3 text-xs shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-muted"
+                            className="group flex items-center justify-between rounded-xl border bg-muted/60 px-3 py-2 text-xs shadow-sm transition hover:-translate-y-0.5 hover:border-primary/40 hover:bg-muted overflow-hidden"
                           >
                             <Link
                               href={`/files?fileId=${file.id}&recentsPage=${recentsPage}${sectionQueryPart}${typeQuery}${searchQueryPart}${viewQueryPart}`}
-                              className="flex flex-1 items-center gap-3"
+                              className="flex min-w-0 flex-1 items-center gap-3"
                             >
-                              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-background">
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-background">
                                 {previewType === "image" ? (
                                   <ImageIcon className="h-4 w-4 text-violet-500" />
                                 ) : previewType === "video" ? (
@@ -827,23 +834,28 @@ export default async function FilesPage(props: {
                                   <FileText className="h-4 w-4 text-amber-500" />
                                 )}
                               </div>
-                              <div className="flex flex-col">
-                                <span className="max-w-[150px] truncate font-medium">
+
+                              <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                                <span className="truncate font-medium">
                                   {file.name}
                                 </span>
-                                <span className="text-[10px] text-muted-foreground">
-                                  {formatBytes(file.size)}
-                                </span>
+                                {!hasDetails && (
+                                  <span className="shrink-0 whitespace-nowrap text-[10px] text-muted-foreground">
+                                    {formatBytes(file.size)}
+                                  </span>
+                                )}
                               </div>
                             </Link>
 
-                            <FileActionsMenu
-                              fileId={file.id}
-                              fileName={file.name}
-                              folderId={file.folderId}
-                              isFavorite={file.isFavorite}
-                              isTrashed={!!file.deletedAt}
-                            />
+                            <div className="shrink-0 pl-2">
+                              <FileActionsMenu
+                                fileId={file.id}
+                                fileName={file.name}
+                                folderId={file.folderId}
+                                isFavorite={file.isFavorite}
+                                isTrashed={!!file.deletedAt}
+                              />
+                            </div>
                           </div>
                         );
                       })}
@@ -890,10 +902,7 @@ export default async function FilesPage(props: {
               </div>
 
               <DetailRow label="File Name" value={selectedFile!.name} />
-              <DetailRow
-                label="Size"
-                value={formatBytes(selectedFile!.size)}
-              />
+              <DetailRow label="Size" value={formatBytes(selectedFile!.size)} />
               <DetailRow
                 label="MIME Type"
                 value={selectedFile!.mimeType || "Unknown"}
@@ -1207,8 +1216,8 @@ function SettingsPanel({
             />
           </label>
           <p className="text-[10px] text-muted-foreground">
-            0 means keep files in Recycle Bin until manually purged. You can
-            run a daily cron that deletes items older than this.
+            0 means keep files in Recycle Bin until manually purged. You can run
+            a daily cron that deletes items older than this.
           </p>
         </div>
 

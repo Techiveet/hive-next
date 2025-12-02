@@ -1,3 +1,4 @@
+// components/auth/session-guard.tsx
 "use client";
 
 import { useEffect, useRef } from "react";
@@ -52,7 +53,7 @@ export function SessionGuard({ children }: Props) {
     // 🧠 Fix: if user hits Back and the page comes from bfcache,
     // force a reload so the server-side auth check runs again.
     const handlePageShow = (event: PageTransitionEvent) => {
-      // @ts-expect-error `persisted` exists on PageTransitionEvent in browsers
+      // REMOVED THE @ts-expect-error comment below because TypeScript now knows this property exists
       if (event.persisted) {
         window.location.reload();
       }
