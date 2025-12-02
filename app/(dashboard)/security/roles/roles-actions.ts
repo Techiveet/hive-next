@@ -55,26 +55,28 @@ export async function upsertRoleAction(rawData: unknown) {
     }
   }
 
- // 4. Validate Permission Scope (security)
-if (input.tenantId && input.permissionIds.length > 0) {
-  const forbiddenPermissions = await prisma.permission.count({
-    where: {
-      id: { in: input.permissionIds },
-      OR: [
-        // central-only permissions (never allowed for tenant roles)
-        { key: { in: CENTRAL_ONLY_PERMISSIONS } },
+  // 4. Validate Permission Scope (security)
+  if (input.tenantId && input.permissionIds.length > 0) {
+    const forbiddenPermissions = await prisma.permission.count({
+      where: {
+        id: { in: input.permissionIds },
+       // ✅ CORRECT
+OR: [
+  { key: { in: CENTRAL_ONLY_PERMISSIONS } },
+  {
+    AND: [
+      { tenantId: { not: null } },
+      { tenantId: { not: input.tenantId } },
+    ],
+  },
+],
+      },
+    });
 
-        // permissions that belong to *other* tenants
-        { tenantId: { notIn: [null, input.tenantId] } },
-      ],
-    },
-  });
-
-  if (forbiddenPermissions > 0) {
-    throw new Error("ATTEMPTED_PRIVILEGE_ESCALATION");
+    if (forbiddenPermissions > 0) {
+      throw new Error("ATTEMPTED_PRIVILEGE_ESCALATION");
+    }
   }
-}
-
 
   // 5. Check Key Uniqueness in Context
   const existingKey = await prisma.role.findFirst({
