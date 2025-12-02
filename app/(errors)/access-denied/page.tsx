@@ -20,7 +20,7 @@ export default function AccessDeniedPage() {
         href: "/sign-in?callbackURL=/dashboard&switch=1",
         label: "Switch account",
       }}
-      iconName="lock"
+      // iconName="lock"  <-- remove this
       Icon={ShieldAlert}
     />
   );
