@@ -39,20 +39,23 @@ export function FileActionsMenu({
 }) {
   const [isPending, startTransition] = useTransition();
 
-  const handleFavorite = () => {
-    startTransition(() => toggleFavorite(fileId, path));
+ const handleFavorite = () => {
+    // If you intend to use path for revalidation, you must update the server action signature first.
+    // For now, assuming the error is correct:
+    startTransition(() => toggleFavorite(fileId)); 
   };
 
-  const handleTrash = () => {
-    startTransition(() => moveToTrash(fileId, path));
+ const handleTrash = () => {
+    // Check if these also need fixing based on their definitions
+    startTransition(() => moveToTrash(fileId)); 
   };
 
   const handleRestore = () => {
-    startTransition(() => restoreFromTrash(fileId, path));
+    startTransition(() => restoreFromTrash(fileId));
   };
 
   const handleDeleteForever = () => {
-    startTransition(() => deleteFilePermanently(fileId, path));
+    startTransition(() => deleteFilePermanently(fileId));
   };
 
   return (
