@@ -8,6 +8,9 @@ import React, {
   type ReactNode,
 } from "react";
 
+// ✅ FIX: Export this type so Can.tsx can use it
+export type PermissionKey = string;
+
 type RbacContextValue = {
   permissions: string[];
   has: (perm: string) => boolean;
@@ -44,7 +47,6 @@ export function RbacProvider({
     };
 
     if (process.env.NODE_ENV !== "production") {
-      // Shows once per render tree; handy to confirm what’s coming in
       console.debug("[RBAC] permissions:", ctxValue.permissions);
     }
 
@@ -62,12 +64,11 @@ export function useRbac() {
   return ctx;
 }
 
-// Ergonomic hook
 export function useCan() {
   const { has, canAny, canAll, permissions } = useRbac();
 
   return {
-    permissions, // useful for debugging in components
+    permissions,
     can: has,
     canAny,
     canAll,
