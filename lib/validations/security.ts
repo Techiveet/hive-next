@@ -12,7 +12,9 @@ export const userSchema = z
       .optional()
       .or(z.literal(""))
       .nullable(),
-    roleId: z.number({ required_error: "Role is required" }),
+    // ✅ FIX: Remove the { required_error } object to satisfy the compiler.
+    // Use z.coerce.number() if this field comes from a form input string.
+    roleId: z.number(), 
     tenantId: z.string().nullable().optional(),
     avatarUrl: z
       .string()
@@ -21,6 +23,7 @@ export const userSchema = z
       .nullable(),
   })
   .superRefine((data, ctx) => {
+    // ... keep your existing logic
     const isCreate = !data.id;
     const pwd = data.password ?? "";
 
@@ -43,6 +46,7 @@ export const userSchema = z
     }
   });
 
+// ... keep roleSchema and permissionSchema as is
 export const roleSchema = z.object({
   id: z.number().nullable().optional(),
   name: z.string().min(2, "Role name must be at least 2 characters"),
