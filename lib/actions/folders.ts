@@ -14,12 +14,29 @@ export async function createFolderAction(input: { name: string }) {
   }
 
   const tenant = await getCurrentTenant();
+  let tenantId: string | undefined;
+
+  // ✅ FIX: TypeScript check for discriminated union
+  if (tenant.mode === "tenant") {
+    tenantId = tenant.id;
+  } else {
+    // If we are in central/root mode, we need to decide where folders go.
+    // For now, let's link them to the "Central Hive" tenant if it exists.
+    const central = await prisma.tenant.findUnique({
+      where: { slug: "central-hive" },
+    });
+    tenantId = central?.id;
+  }
+
+  if (!tenantId) {
+    return { ok: false, error: "Tenant context is missing or invalid." };
+  }
 
   try {
     await prisma.folder.create({
       data: {
         name: input.name.trim(),
-        tenantId: tenant.id,
+        tenantId: tenantId, // Use the resolved tenantId
         createdById: user.id,
       },
     });
