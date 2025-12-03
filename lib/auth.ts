@@ -1,5 +1,7 @@
 // lib/auth.ts
 
+import { compare, hash } from "bcryptjs"; // ✅ Import bcryptjs
+
 import { betterAuth } from "better-auth";
 import { prisma } from "./prisma";
 import { prismaAdapter } from "better-auth/adapters/prisma";
@@ -17,7 +19,17 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
     // autoSignIn: true is not needed for admin-created users
-    minPasswordLength: 8, 
+    minPasswordLength: 8,
+    
+    // ✅ ADDED: Configure Better Auth to use Bcrypt
+    password: {
+      hash: async (password) => {
+        return await hash(password, 10);
+      },
+      verify: async ({ password, hash: storedHash }) => {
+        return await compare(password, storedHash);
+      },
+    },
   },
 
   /**

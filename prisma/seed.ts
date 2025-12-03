@@ -3,6 +3,7 @@
 import { PrismaClient, RoleScope } from "@prisma/client";
 
 import { auth } from "../lib/auth";
+import { hash } from "bcryptjs"; // ✅ Import bcrypt to fix existing users
 import { syncCentralSuperAdminPermissions } from "../lib/rbac";
 
 const prisma = new PrismaClient();
@@ -33,7 +34,7 @@ function section(title: string) {
 /**
  * Create a user via Better Auth if it does not exist yet.
  * Ensures password hashing + account rows are correct.
- * Also auto-verifies + activates seeded admins.
+ * ✅ UPDATE: If user exists, force-updates password to ensure Bcrypt compatibility.
  */
 async function ensureUser(opts: {
   name: string;
@@ -44,8 +45,28 @@ async function ensureUser(opts: {
     where: { email: opts.email },
   });
 
-  if (existing) return existing;
+  if (existing) {
+    // ✅ Fix: If user exists, update their password to match the current auth config (Bcrypt)
+    // This fixes the "Invalid password hash" error for old users.
+    const hashedPassword = await hash(opts.password, 10);
 
+    const account = await prisma.account.findFirst({
+      where: { userId: existing.id },
+    });
+
+    if (account) {
+      await prisma.account.update({
+        where: { id: account.id },
+        data: { password: hashedPassword },
+      });
+      console.log(`  ↻ Updated password for existing user: ${opts.email}`);
+    }
+    return existing;
+  }
+
+  // If user doesn't exist, create them.
+  // auth.api.signUpEmail uses the config in lib/auth.ts (which is now Bcrypt),
+  // so new users are created correctly automatically.
   await auth.api.signUpEmail({
     body: {
       name: opts.name,

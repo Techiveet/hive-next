@@ -11,6 +11,7 @@ import { auth } from "@/lib/auth";
 import crypto from "crypto";
 import { getCurrentSession } from "@/lib/auth-server";
 import { getCurrentUserPermissions } from "@/lib/rbac";
+import { hash } from "bcryptjs"; // ✅ Import bcryptjs
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/send-email";
@@ -136,28 +137,44 @@ async function issuePasswordSetupToken(userId: string) {
 }
 
 /* ------------------------------------------------------------------
- * Shared password-change helper
+ * Shared password-change helper (FIXED)
  * ------------------------------------------------------------------ */
 
 /**
- * Change a user's password via Better Auth.
- * Used both from the users actions (edit user) and from /api/setup-password.
+ * Change a user's password directly via Prisma using Bcrypt.
+ * This ensures the hash format is compatible with Better Auth login.
  */
 export async function changeUserPasswordInternal(
   userId: string,
   newPassword: string
 ) {
-  const res = await auth.api.changePassword({
-    body: {
-      userId,
-      newPassword,
+  // ✅ FIX: Use bcrypt to hash. This generates a standard $2a$... string
+  // which Better Auth can verify successfully.
+  const hashedPassword = await hash(newPassword, 10);
+
+  // Find the 'credential' account for this user
+  const account = await prisma.account.findFirst({
+    where: {
+      userId: userId,
     },
-    asResponse: false,
   });
 
-  if (res?.error) {
-    console.error("[changeUserPasswordInternal] error", res.error);
-    throw new Error("CHANGE_PASSWORD_FAILED");
+  if (account) {
+    await prisma.account.update({
+      where: { id: account.id },
+      data: { password: hashedPassword },
+    });
+  } else {
+    // Edge case: Create account if missing (e.g. user imported without credentials)
+    await prisma.account.create({
+      data: {
+        userId: userId,
+        providerId: "credential",
+        accountId: userId,
+        password: hashedPassword,
+        accessToken: crypto.randomBytes(32).toString("hex"), // required dummy
+      },
+    });
   }
 }
 
@@ -312,8 +329,8 @@ export async function createOrUpdateUserAction(rawData: unknown) {
   }
 
   /* ----------------------------------------------------------------
-   * Link tenant + role (one active role per context)
-   * ---------------------------------------------------------------- */
+     * Link tenant + role (one active role per context)
+     * ---------------------------------------------------------------- */
   if (input.tenantId) {
     await prisma.userTenant.upsert({
       where: {
@@ -345,8 +362,8 @@ export async function createOrUpdateUserAction(rawData: unknown) {
   }
 
   /* ----------------------------------------------------------------
-   * Email notification
-   * ---------------------------------------------------------------- */
+     * Email notification
+     * ---------------------------------------------------------------- */
   const status = user.isActive ? "ACTIVE" : "INACTIVE";
   const kind = input.id ? ("updated" as const) : ("created" as const);
 
