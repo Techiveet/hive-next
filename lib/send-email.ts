@@ -113,7 +113,8 @@ export async function sendEmail({
         react,
         html,
         text,
-        reply_to: replyTo,
+        // ✅ FIX: Change 'reply_to' to 'replyTo' (camelCase)
+        replyTo: replyTo, 
       });
       console.log("✅ [EMAIL SENT via RESEND]", { id: result.data?.id });
     } catch (error) {
