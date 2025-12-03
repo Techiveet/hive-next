@@ -11,7 +11,7 @@ import { auth } from "@/lib/auth";
 import crypto from "crypto";
 import { getCurrentSession } from "@/lib/auth-server";
 import { getCurrentUserPermissions } from "@/lib/rbac";
-import { hash } from "bcryptjs"; // ✅ Import bcryptjs
+import { hash } from "bcryptjs";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/send-email";
@@ -148,8 +148,7 @@ export async function changeUserPasswordInternal(
   userId: string,
   newPassword: string
 ) {
-  // ✅ FIX: Use bcrypt to hash. This generates a standard $2a$... string
-  // which Better Auth can verify successfully.
+  // Use bcrypt to hash ($2a$...)
   const hashedPassword = await hash(newPassword, 10);
 
   // Find the 'credential' account for this user
@@ -168,6 +167,8 @@ export async function changeUserPasswordInternal(
     // Edge case: Create account if missing (e.g. user imported without credentials)
     await prisma.account.create({
       data: {
+        // ✅ FIX: Manually provide an ID to satisfy Prisma Schema
+        id: crypto.randomUUID(), 
         userId: userId,
         providerId: "credential",
         accountId: userId,
