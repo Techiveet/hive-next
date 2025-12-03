@@ -3,7 +3,8 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
-  darkMode: ["class"], // 👈 enables class-based dark mode
+  // ✅ FIX: Use string "class", not an array ["class"]
+  darkMode: "class", 
   content: [
     "./app/**/*.{ts,tsx,js,jsx}",
     "./components/**/*.{ts,tsx,js,jsx}",
