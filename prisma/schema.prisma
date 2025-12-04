@@ -147,6 +147,10 @@ model Tenant {
   emailSettings       EmailSettings?
   fileManagerSettings FileManagerSettings?
   
+  // ✅ NEW: Backup Relations
+  backupSettings      BackupSettings?
+  backups             BackupHistory[]
+  
   languages           Language[]
 }
 
@@ -399,4 +403,38 @@ model Language {
   updatedAt DateTime @updatedAt
 
   @@unique([tenantId, code])
+}
+
+// =====================
+//    BACKUP SYSTEM
+// =====================
+
+model BackupSettings {
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  enabled   Boolean @default(false)
+  frequency String  @default("DAILY") // DAILY, WEEKLY, MONTHLY
+  time      String  @default("00:00") // 24h format
+  retention Int     @default(7)       // How many backups to keep
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BackupHistory {
+  id       String  @id @default(cuid())
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  filename String
+  path     String  @db.Text // Local path or S3 URL
+  size     BigInt  // Bytes
+  status   String  // SUCCESS, FAILED
+  type     String  // MANUAL, AUTOMATIC
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
 }

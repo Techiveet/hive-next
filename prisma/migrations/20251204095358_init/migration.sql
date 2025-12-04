@@ -304,6 +304,36 @@ CREATE TABLE `Language` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable
+CREATE TABLE `BackupSettings` (
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NULL,
+    `enabled` BOOLEAN NOT NULL DEFAULT false,
+    `frequency` VARCHAR(191) NOT NULL DEFAULT 'DAILY',
+    `time` VARCHAR(191) NOT NULL DEFAULT '00:00',
+    `retention` INTEGER NOT NULL DEFAULT 7,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `BackupSettings_tenantId_key`(`tenantId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `BackupHistory` (
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NULL,
+    `filename` VARCHAR(191) NOT NULL,
+    `path` TEXT NOT NULL,
+    `size` BIGINT NOT NULL,
+    `status` VARCHAR(191) NOT NULL,
+    `type` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+
+    INDEX `BackupHistory_tenantId_idx`(`tenantId`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- AddForeignKey
 ALTER TABLE `session` ADD CONSTRAINT `session_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -378,3 +408,9 @@ ALTER TABLE `EmailSettings` ADD CONSTRAINT `EmailSettings_tenantId_fkey` FOREIGN
 
 -- AddForeignKey
 ALTER TABLE `Language` ADD CONSTRAINT `Language_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BackupSettings` ADD CONSTRAINT `BackupSettings_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `BackupHistory` ADD CONSTRAINT `BackupHistory_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

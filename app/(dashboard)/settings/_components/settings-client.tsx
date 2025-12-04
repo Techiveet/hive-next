@@ -3,6 +3,7 @@
 import * as React from "react";
 
 import {
+  Archive, // ✅ Added Archive icon for Backups
   Bell,
   Building2,
   Calendar,
@@ -37,11 +38,12 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { BackupManager } from "./backup-manager"; // ✅ Import Backup Manager
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LanguageManager } from "./language-manager"; // This import will work once language-manager.tsx exists
+import { LanguageManager } from "./language-manager"; 
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -59,7 +61,7 @@ type SettingsClientProps = {
     slug: string;
   } | null;
   permissions: string[];
-  languages: any[]; // List of languages fetched from DB
+  languages: any[]; 
   brandSettings: {
     titleText: string;
     footerText: string;
@@ -112,7 +114,8 @@ type SettingsSection =
   | "company"
   | "email"
   | "notifications"
-  | "localization";
+  | "localization"
+  | "backups"; // ✅ Added 'backups'
 
 export function SettingsClient({
   user,
@@ -128,13 +131,15 @@ export function SettingsClient({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const isCentral = !tenant;
+  // ✅ DEFINITION: Central Admin
+  // Returns true if no tenant context OR if the tenant slug matches your central app slug
+  const isCentral = !tenant || tenant.slug === "central-hive";
 
   const has = (key: string) => permissions.includes(key);
   const hasAny = (keys: string[]) => keys.some((k) => permissions.includes(k));
 
   // ---------------------------------------------------------------------------
-  // SETTINGS PERMISSION MODEL
+  // PERMISSIONS
   // ---------------------------------------------------------------------------
 
   const canViewBrandSettings = hasAny([
@@ -174,6 +179,10 @@ export function SettingsClient({
   ]);
   const canEditNotificationSettings = has("settings.notifications.update");
 
+  // ✅ LOCALIZATION & BACKUP GUARDS (Central Admin Only)
+  const canViewLocalization = isCentral && canManageTenant;
+  const canViewBackups = isCentral && canManageTenant; 
+
   // ---------------------------------------------------------------------------
   // LEFT NAV MODEL
   // ---------------------------------------------------------------------------
@@ -195,7 +204,13 @@ export function SettingsClient({
       key: "localization" as SettingsSection,
       label: "Localization",
       icon: Languages,
-      canView: canManageTenant,
+      canView: canViewLocalization, // ✅ Protected: Central Only
+    },
+    {
+      key: "backups" as SettingsSection, // ✅ NEW TAB
+      label: "Backups",
+      icon: Archive,
+      canView: canViewBackups, // ✅ Protected: Central Only
     },
     {
       key: "company" as SettingsSection,
@@ -230,11 +245,12 @@ export function SettingsClient({
   const initialSection: SettingsSection =
     sectionFromUrl && visibleSectionKeys.includes(sectionFromUrl)
       ? sectionFromUrl
-      : (visibleSectionKeys[0] ?? "system");
+      : visibleSectionKeys[0] ?? "system";
 
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [isPending, startTransition] = useTransition();
 
+  // Redirect if current section is not visible (e.g. tenant trying to access localization via URL)
   React.useEffect(() => {
     if (!visibleSectionKeys.includes(section) && visibleSectionKeys[0]) {
       setSection(visibleSectionKeys[0]);
@@ -566,7 +582,7 @@ export function SettingsClient({
               System Settings
             </h1>
             <p className="text-xs text-muted-foreground">
-              Manage brand, workspace, and communication preferences.
+              Manage brand, workspace, and system configuration.
             </p>
           </div>
         </div>
@@ -576,21 +592,21 @@ export function SettingsClient({
             <UserIcon className="h-3 w-3" />
             {user.email}
           </Badge>
-          {tenant ? (
-            <Badge
-              variant="secondary"
-              className="flex items-center gap-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-100"
-            >
-              <Building2 className="h-3 w-3" />
-              {tenant.name}
-            </Badge>
-          ) : (
+          {isCentral ? (
             <Badge
               variant="secondary"
               className="flex items-center gap-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100"
             >
               <ShieldCheck className="h-3 w-3" />
               Central Hive
+            </Badge>
+          ) : (
+            <Badge
+              variant="secondary"
+              className="flex items-center gap-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-100"
+            >
+              <Building2 className="h-3 w-3" />
+              {tenant?.name}
             </Badge>
           )}
         </div>
@@ -813,6 +829,7 @@ export function SettingsClient({
             </Card>
           )}
 
+          {/* SYSTEM SETTINGS (PROFILE + WORKSPACE + APP CONFIG) */}
           {section === "system" && (
             <div className="space-y-6">
               {/* Profile */}
@@ -824,7 +841,10 @@ export function SettingsClient({
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handleProfileSubmit} className="space-y-3">
+                  <form
+                    onSubmit={handleProfileSubmit}
+                    className="space-y-3"
+                  >
                     <div className="space-y-2">
                       <Label htmlFor="name">Full name</Label>
                       <Input
@@ -866,9 +886,14 @@ export function SettingsClient({
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <form onSubmit={handleTenantSubmit} className="space-y-3">
+                    <form
+                      onSubmit={handleTenantSubmit}
+                      className="space-y-3"
+                    >
                       <div className="space-y-2">
-                        <Label htmlFor="workspace-name">Workspace name</Label>
+                        <Label htmlFor="workspace-name">
+                          Workspace name
+                        </Label>
                         <Input
                           id="workspace-name"
                           value={tenantForm.name}
@@ -933,7 +958,9 @@ export function SettingsClient({
                           disabled={!canManageTenant || isPending}
                           className="min-w-[140px]"
                         >
-                          {isPending ? "Saving..." : "Save Workspace"}
+                          {isPending
+                            ? "Saving..."
+                            : "Save Workspace"}
                         </Button>
                       </div>
                     </form>
@@ -990,7 +1017,9 @@ export function SettingsClient({
                                 <option value="Europe/London">
                                   London (GMT)
                                 </option>
-                                <option value="Asia/Tokyo">Tokyo (JST)</option>
+                                <option value="Asia/Tokyo">
+                                  Tokyo (JST)
+                                </option>
                                 <option value="Africa/Addis_Ababa">
                                   Addis Ababa (EAT)
                                 </option>
@@ -1044,8 +1073,12 @@ export function SettingsClient({
                                 <option value="yyyy-MM-dd">
                                   YYYY-MM-DD (ISO)
                                 </option>
-                                <option value="dd/MM/yyyy">DD/MM/YYYY</option>
-                                <option value="MM/dd/yyyy">MM/DD/YYYY</option>
+                                <option value="dd/MM/yyyy">
+                                  DD/MM/YYYY
+                                </option>
+                                <option value="MM/dd/yyyy">
+                                  MM/DD/YYYY
+                                </option>
                               </select>
                             </div>
                           </div>
@@ -1079,7 +1112,9 @@ export function SettingsClient({
                           <div className="flex h-8 w-8 items-center justify-center rounded-md bg-rose-50 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400">
                             <ShieldAlert className="h-4 w-4" />
                           </div>
-                          <h4 className="text-sm font-semibold">Security</h4>
+                          <h4 className="text-sm font-semibold">
+                            Security
+                          </h4>
                         </div>
 
                         <div className="grid gap-6 md:grid-cols-2">
@@ -1144,7 +1179,9 @@ export function SettingsClient({
                           disabled={isPending}
                           className="min-w-[140px]"
                         >
-                          {isPending ? "Saving..." : "Save Configuration"}
+                          {isPending
+                            ? "Saving..."
+                            : "Save Configuration"}
                         </Button>
                       </div>
                     </form>
@@ -1155,17 +1192,29 @@ export function SettingsClient({
           )}
 
           {/* LOCALIZATION TAB (NEW) */}
-          {section === "localization" && canManageTenant && (
+          {/* ✅ Visibility Logic Applied Here */}
+          {section === "localization" && canViewLocalization && (
             <div className="space-y-6">
               <div className="mb-4">
-                <h2 className="text-lg font-medium">
-                  Languages & Translations
-                </h2>
+                <h2 className="text-lg font-medium">Languages & Translations</h2>
                 <p className="text-sm text-muted-foreground">
                   Create new languages and translate system keys.
                 </p>
               </div>
+              {/* Render LanguageManager here */}
               <LanguageManager languages={languages} />
+            </div>
+          )}
+
+          {/* BACKUP TAB (NEW) */}
+          {/* ✅ Only visible to Central Admin */}
+          {section === "backups" && canViewBackups && (
+            <div className="space-y-6">
+               <div className="mb-4">
+                  <h2 className="text-lg font-medium">System Backups</h2>
+                  <p className="text-sm text-muted-foreground">Configure scheduled backups and manual snapshots.</p>
+               </div>
+               <BackupManager />
             </div>
           )}
 
@@ -1202,7 +1251,9 @@ export function SettingsClient({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="company-legal-name">Legal name</Label>
+                      <Label htmlFor="company-legal-name">
+                        Legal name
+                      </Label>
                       <Input
                         id="company-legal-name"
                         value={companyForm.legalName}
@@ -1230,7 +1281,9 @@ export function SettingsClient({
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="company-reg">Registration number</Label>
+                      <Label htmlFor="company-reg">
+                        Registration number
+                      </Label>
                       <Input
                         id="company-reg"
                         value={companyForm.registrationNumber}
@@ -1383,7 +1436,9 @@ export function SettingsClient({
                       disabled={isPending || !canEditCompanySettings}
                       className="min-w-[160px]"
                     >
-                      {isPending ? "Saving..." : "Save Company Settings"}
+                      {isPending
+                        ? "Saving..."
+                        : "Save Company Settings"}
                     </Button>
                   </div>
                 </form>
@@ -1424,7 +1479,8 @@ export function SettingsClient({
                         <option value="SMTP">SMTP</option>
                       </select>
                       <p className="text-[11px] text-muted-foreground">
-                        Choose which provider to use when sending system emails.
+                        Choose which provider to use when sending system
+                        emails.
                       </p>
                     </div>
                   </div>
@@ -1445,12 +1501,14 @@ export function SettingsClient({
                         disabled={!canEditEmailSettings || isPending}
                       />
                       <p className="text-[11px] text-muted-foreground">
-                        This appears as the sender name in the recipient&apos;s
-                        inbox.
+                        This appears as the sender name in the
+                        recipient&apos;s inbox.
                       </p>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="email-from-address">From email</Label>
+                      <Label htmlFor="email-from-address">
+                        From email
+                      </Label>
                       <Input
                         id="email-from-address"
                         type="email"
@@ -1465,8 +1523,8 @@ export function SettingsClient({
                         disabled={!canEditEmailSettings || isPending}
                       />
                       <p className="text-[11px] text-muted-foreground">
-                        For Resend, must be a verified domain. For SMTP, must
-                        match your server.
+                        For Resend, must be a verified domain. For SMTP,
+                        must match your server.
                       </p>
                     </div>
                     <div className="space-y-2">
@@ -1487,7 +1545,8 @@ export function SettingsClient({
                         disabled={!canEditEmailSettings || isPending}
                       />
                       <p className="text-[11px] text-muted-foreground">
-                        Replies to your emails will go to this address if set.
+                        Replies to your emails will go to this address if
+                        set.
                       </p>
                     </div>
                   </div>
@@ -1573,8 +1632,8 @@ export function SettingsClient({
 
                   <div className="flex items-center justify-between pt-2">
                     <p className="text-[11px] text-muted-foreground">
-                      Provider credentials (Resend API key, SMTP password) are
-                      stored in server environment variables, not in the
+                      Provider credentials (Resend API key, SMTP password)
+                      are stored in server environment variables, not in the
                       database.
                     </p>
                     <Button
@@ -1582,7 +1641,9 @@ export function SettingsClient({
                       disabled={isPending || !canEditEmailSettings}
                       className="min-w-[160px]"
                     >
-                      {isPending ? "Saving..." : "Save Email Settings"}
+                      {isPending
+                        ? "Saving..."
+                        : "Save Email Settings"}
                     </Button>
                   </div>
 
@@ -1674,7 +1735,9 @@ export function SettingsClient({
                   <CardFooter className="mt-2 flex justify-end gap-2 px-0">
                     <Button
                       type="submit"
-                      disabled={isPending || !canEditNotificationSettings}
+                      disabled={
+                        isPending || !canEditNotificationSettings
+                      }
                     >
                       Save preferences
                     </Button>
