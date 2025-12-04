@@ -41,7 +41,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { LanguageManager } from "./language-manager"; // This import will work once language-manager.tsx exists
+import { LanguageManager } from "./language-manager";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
@@ -128,7 +128,9 @@ export function SettingsClient({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const isCentral = !tenant;
+  // ✅ DEFINITION: Central Admin
+  // Returns true if no tenant context OR if the tenant slug matches your central app slug
+  const isCentral = !tenant || tenant.slug === "central-hive";
 
   const has = (key: string) => permissions.includes(key);
   const hasAny = (keys: string[]) => keys.some((k) => permissions.includes(k));
@@ -174,6 +176,9 @@ export function SettingsClient({
   ]);
   const canEditNotificationSettings = has("settings.notifications.update");
 
+  // ✅ LOCALIZATION VISIBILITY GUARD
+  const canViewLocalization = isCentral && canManageTenant;
+
   // ---------------------------------------------------------------------------
   // LEFT NAV MODEL
   // ---------------------------------------------------------------------------
@@ -195,7 +200,7 @@ export function SettingsClient({
       key: "localization" as SettingsSection,
       label: "Localization",
       icon: Languages,
-      canView: canManageTenant,
+      canView: canViewLocalization, // ✅ Visibility applied here
     },
     {
       key: "company" as SettingsSection,
@@ -230,7 +235,7 @@ export function SettingsClient({
   const initialSection: SettingsSection =
     sectionFromUrl && visibleSectionKeys.includes(sectionFromUrl)
       ? sectionFromUrl
-      : (visibleSectionKeys[0] ?? "system");
+      : visibleSectionKeys[0] ?? "system";
 
   const [section, setSection] = useState<SettingsSection>(initialSection);
   const [isPending, startTransition] = useTransition();
@@ -576,21 +581,21 @@ export function SettingsClient({
             <UserIcon className="h-3 w-3" />
             {user.email}
           </Badge>
-          {tenant ? (
-            <Badge
-              variant="secondary"
-              className="flex items-center gap-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-100"
-            >
-              <Building2 className="h-3 w-3" />
-              {tenant.name}
-            </Badge>
-          ) : (
+          {isCentral ? (
             <Badge
               variant="secondary"
               className="flex items-center gap-1 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-100"
             >
               <ShieldCheck className="h-3 w-3" />
               Central Hive
+            </Badge>
+          ) : (
+            <Badge
+              variant="secondary"
+              className="flex items-center gap-1 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-100"
+            >
+              <Building2 className="h-3 w-3" />
+              {tenant?.name}
             </Badge>
           )}
         </div>
@@ -813,6 +818,7 @@ export function SettingsClient({
             </Card>
           )}
 
+          {/* SYSTEM SETTINGS (PROFILE + WORKSPACE + APP CONFIG) */}
           {section === "system" && (
             <div className="space-y-6">
               {/* Profile */}
@@ -1155,7 +1161,7 @@ export function SettingsClient({
           )}
 
           {/* LOCALIZATION TAB (NEW) */}
-          {section === "localization" && canManageTenant && (
+          {section === "localization" && canViewLocalization && (
             <div className="space-y-6">
               <div className="mb-4">
                 <h2 className="text-lg font-medium">
@@ -1165,6 +1171,7 @@ export function SettingsClient({
                   Create new languages and translate system keys.
                 </p>
               </div>
+              {/* Render LanguageManager here */}
               <LanguageManager languages={languages} />
             </div>
           )}

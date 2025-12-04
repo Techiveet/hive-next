@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { LanguageSwitcher } from "@/components/language-switcher";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 
@@ -10,9 +11,15 @@ type NavbarProps = {
     name: string | null;
     email: string;
   };
+  currentLocale?: string;
+  languages?: { code: string; name: string }[];
 };
 
-export function Navbar({ user }: NavbarProps) {
+export function Navbar({ 
+  user, 
+  currentLocale = "en", 
+  languages = [] 
+}: NavbarProps) {
   const [host, setHost] = useState<string | null>(null);
 
   useEffect(() => {
@@ -32,8 +39,17 @@ export function Navbar({ user }: NavbarProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
+        {/* LANGUAGE SWITCHER */}
+        <LanguageSwitcher 
+            currentLocale={currentLocale} 
+            languages={languages} 
+        />
+
+        {/* THEME TOGGLE */}
         <ThemeToggle />
+        
+        {/* USER MENU */}
         {user && <UserMenu user={user} />}
       </div>
     </header>

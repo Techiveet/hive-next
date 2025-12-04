@@ -1,0 +1,18 @@
+{
+  "auth.login": "Sign In",
+  "auth.logout": "Sign Out",
+  "common.cancel": "Cancel",
+  "common.save": "Save Changes",
+  "dashboard.title": "Dashboard",
+  "settings.profile": "Profile",
+  "settings.security": "Security",
+  "sidebar.billing": "Billing",
+  "sidebar.dashboard": "Dashboard",
+  "sidebar.files": "Files",
+  "sidebar.home": "Home",
+  "sidebar.security": "Security",
+  "sidebar.settings": "Settings",
+  "sidebar.tenants": "Tenants",
+  "validation.email": "Please enter a valid email",
+  "validation.required": "This field is required"
+}

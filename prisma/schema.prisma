@@ -10,18 +10,21 @@ generator client {
 }
 
 // =====================
-//       USER / AUTH
+//        USER / AUTH
 // =====================
 
 model User {
-  id            String   @id
-  name          String   @db.Text
+  id            String    @id
+  name          String    @db.Text
   email         String
-  emailVerified Boolean  @default(false)
+  emailVerified Boolean   @default(false)
+  
+  // Custom Security Field
+  twoFactorEnabled Boolean @default(false)
 
   // make both large enough for long URLs / base64
-  image     String?  @db.LongText
-  avatarUrl String?  @db.LongText
+  image         String?   @db.LongText
+  avatarUrl     String?   @db.LongText
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -36,9 +39,9 @@ model User {
   folders  Folder[] @relation("UserFolders")
   files    File[]   @relation("UserFiles")
 
-  sessions             Session[]
-  accounts             Account[]
-  passwordSetupTokens  PasswordSetupToken[] // 👈 one-time password setup tokens
+  sessions            Session[]
+  accounts            Account[]
+  passwordSetupTokens PasswordSetupToken[] // 👈 one-time password setup tokens
 
   @@unique([email])
   @@map("user")
@@ -61,20 +64,20 @@ model Session {
 }
 
 model Account {
-  id                    String   @id
+  id                    String    @id
   accountId             String
   providerId            String
   userId                String
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken           String?  @db.Text
-  refreshToken          String?  @db.Text
-  idToken               String?  @db.Text
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
-  scope                 String?  @db.Text
-  password              String?  @db.Text
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  scope                 String?   @db.Text
+  password              String?   @db.Text
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   @@unique([providerId, accountId])
   @@index([userId])
@@ -107,7 +110,7 @@ model PasswordSetupToken {
 }
 
 // =====================
-//   MULTI-TENANT + RBAC
+//    MULTI-TENANT + RBAC
 // =====================
 
 enum RoleScope {
@@ -127,7 +130,7 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  isActive Boolean @default(true) // ✅ activation / deactivation
+  isActive Boolean @default(true) 
 
   users       UserTenant[]
   userRoles   UserRole[]
@@ -138,10 +141,13 @@ model Tenant {
   permissions Permission[]
 
   // one settings row per tenant
-  appSettings       AppSettings?
-  brandSettings     BrandSettings?
-  companySettings   CompanySettings?
-  emailSettings     EmailSettings?
+  appSettings         AppSettings?
+  brandSettings       BrandSettings?
+  companySettings     CompanySettings?
+  emailSettings       EmailSettings?
+  fileManagerSettings FileManagerSettings?
+  
+  languages           Language[]
 }
 
 model TenantDomain {
@@ -227,7 +233,7 @@ model UserRole {
 }
 
 // =====================
-//   FILE MANAGER
+//    FILE MANAGER
 // =====================
 
 model Folder {
@@ -268,50 +274,51 @@ model File {
   ownerId String
   owner   User   @relation("UserFiles", fields: [ownerId], references: [id])
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  isFavorite Boolean  @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  isFavorite Boolean   @default(false)
   deletedAt  DateTime?
 
   @@index([tenantId])
 }
 
 // =====================
-//   FILE SETTINGS
+//    FILE SETTINGS
 // =====================
 
 model FileManagerSettings {
-  id                        String  @id @default("global")
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   maxFileSizeMb             Int     @default(50)
-  allowedExtensions         Json
+  allowedExtensions         Json    @default("[]") // Store as array of strings
   autoEmptyRecycleBinDays   Int     @default(30)
   requireDeleteConfirmation Boolean @default(true)
   allowPublicSharing        Boolean @default(false)
 }
 
 // =====================
-//   APP SETTINGS
+//    APP SETTINGS
 // =====================
 
 model AppSettings {
   id       String  @id @default(cuid())
-  tenantId String?
+  tenantId String? @unique
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   timezone               String  @default("UTC")
   locale                 String  @default("en")
   dateFormat             String  @default("yyyy-MM-dd")
   timeFormat             String  @default("HH:mm")
-  weekStartsOn           Int     @default(1)        // 1 = Monday
+  weekStartsOn           Int     @default(1) // 1 = Monday
   defaultTheme           String  @default("system") // "light" | "dark" | "system"
   allowUserThemeOverride Boolean @default(true)
   enforceTwoFactor       Boolean @default(false)
+  sessionTimeout         Int     @default(30)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  // one row per tenant (plus optional central row with tenantId = null)
-  @@unique([tenantId])
 }
 
 model BrandSettings {
@@ -326,7 +333,6 @@ model BrandSettings {
   logoDarkUrl  String? @db.LongText
   faviconUrl   String? @db.LongText
 
-  // NEW FIELD
   sidebarIconUrl String? @db.LongText
 
   createdAt DateTime @default(now())
@@ -374,4 +380,23 @@ model EmailSettings {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Language {
+  id       String  @id @default(cuid())
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  code      String // e.g., "am", "fr", "es"
+  name      String // e.g., "Amharic", "French"
+  isDefault Boolean @default(false)
+  isEnabled Boolean @default(true)
+
+  // Stores the actual translations
+  translations Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
 }

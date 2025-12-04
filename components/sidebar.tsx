@@ -16,6 +16,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
+import { useTranslation } from "@/lib/hooks/use-translation"; // ✅ Import the hook
 
 type SidebarProps = {
   user?: {
@@ -31,20 +32,49 @@ type SidebarProps = {
   };
 };
 
-const navItems = [
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { label: "Tenants", href: "/tenants", icon: Building2 },
-  { label: "Security", href: "/security", icon: ShieldCheck },
-  { label: "Files", href: "/files", icon: Folder },
-  { label: "Billing", href: "/billing", icon: CreditCard },
-  { label: "Settings", href: "/settings", icon: Settings },
-];
-
 const STORAGE_KEY = "hive-sidebar-collapsed";
 
 export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
   const pathname = usePathname();
   const { resolvedTheme } = useTheme();
+  
+  // ✅ Initialize Translation Hook
+  const { t } = useTranslation(); 
+
+  // ✅ Define navItems inside the component to use `t()`
+  // The first argument is the translation key, the second is the default English text.
+  const navItems = [
+    { 
+      label: t("sidebar.dashboard", "Dashboard"), 
+      href: "/dashboard", 
+      icon: LayoutDashboard 
+    },
+    { 
+      label: t("sidebar.tenants", "Tenants"), 
+      href: "/tenants", 
+      icon: Building2 
+    },
+    { 
+      label: t("sidebar.security", "Security"), 
+      href: "/security", 
+      icon: ShieldCheck 
+    },
+    { 
+      label: t("sidebar.files", "Files"), 
+      href: "/files", 
+      icon: Folder 
+    },
+    { 
+      label: t("sidebar.billing", "Billing"), 
+      href: "/billing", 
+      icon: CreditCard 
+    },
+    { 
+      label: t("sidebar.settings", "Settings"), 
+      href: "/settings", 
+      icon: Settings 
+    },
+  ];
 
   // collapsed state + “mounted” flag so we don’t animate on first paint
   const [collapsed, setCollapsed] = useState(true);
@@ -98,7 +128,7 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
   // billing – main billing permission (you can add more keys here later)
   const canSeeBilling = hasAny(["manage_billing", "billing.view"]);
 
-   // settings – brand / company / email / notifications / localization OR high-level admins
+  // settings – brand / company / email / notifications / localization OR high-level admins
   const canSeeSettings = hasAny([
     "settings.brand.view",
     "settings.company.view",
@@ -109,7 +139,6 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
     "manage_security",
     "manage_tenants",
   ]);
-
 
   const appTitle = brand?.titleText?.trim() || "Hive";
   const { logoLightUrl, logoDarkUrl, sidebarIconUrl } = brand || {};

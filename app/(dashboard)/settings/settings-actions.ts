@@ -1,5 +1,3 @@
-// app/(dashboard)/settings/_components/settings-actions.ts
-
 "use server";
 
 import { getCurrentSession } from "@/lib/auth-server";
@@ -126,6 +124,71 @@ export async function updateTenantSettingsAction(
 }
 
 /* ------------------------------------------------------------------ */
+/* APP / SYSTEM CONFIGURATION (Timezone, Locale, Security, Theme)     */
+/* ------------------------------------------------------------------ */
+
+export type UpdateAppSettingsInput = {
+  timezone: string;
+  locale: string;
+  dateFormat: string;
+  timeFormat: string;
+  weekStartsOn: number;
+  defaultTheme: "light" | "dark" | "system";
+  allowUserThemeOverride: boolean;
+  enforceTwoFactor: boolean;
+  sessionTimeout: number;
+};
+
+export async function updateAppSettingsAction(input: UpdateAppSettingsInput) {
+  const { user } = await getCurrentSession();
+  if (!user) {
+    throw new Error("UNAUTHORIZED");
+  }
+
+  const { tenant } = await getTenantAndUser();
+  const tenantId = tenant?.id ?? null;
+
+  const perms = await getCurrentUserPermissions();
+  const allowed = perms.some((p) =>
+    ["manage_tenants", "manage_security", "settings.system.update"].includes(p)
+  );
+
+  if (!allowed) {
+    throw new Error("FORBIDDEN_INSUFFICIENT_PERMISSIONS");
+  }
+
+  await prisma.appSettings.upsert({
+    where: { tenantId },
+    update: {
+      timezone: input.timezone,
+      locale: input.locale,
+      dateFormat: input.dateFormat,
+      timeFormat: input.timeFormat,
+      weekStartsOn: input.weekStartsOn,
+      defaultTheme: input.defaultTheme,
+      allowUserThemeOverride: input.allowUserThemeOverride,
+      enforceTwoFactor: input.enforceTwoFactor,
+      sessionTimeout: input.sessionTimeout,
+    },
+    create: {
+      tenantId,
+      timezone: input.timezone,
+      locale: input.locale,
+      dateFormat: input.dateFormat,
+      timeFormat: input.timeFormat,
+      weekStartsOn: input.weekStartsOn,
+      defaultTheme: input.defaultTheme,
+      allowUserThemeOverride: input.allowUserThemeOverride,
+      enforceTwoFactor: input.enforceTwoFactor,
+      sessionTimeout: input.sessionTimeout,
+    },
+  });
+
+  revalidatePath("/settings");
+  revalidatePath("/", "layout");
+}
+
+/* ------------------------------------------------------------------ */
 /* BRAND SETTINGS (LOGOS + TEXT)                                      */
 /* ------------------------------------------------------------------ */
 
@@ -137,34 +200,6 @@ export type UpdateBrandSettingsInput = {
   faviconUrl?: string;
   sidebarIconUrl?: string;
 };
-
-export type UpdateCompanySettingsInput = {
-  companyName: string;
-  legalName?: string;
-  email?: string;
-  phone?: string;
-  website?: string;
-  addressLine1?: string;
-  addressLine2?: string;
-  city?: string;
-  state?: string;
-  postalCode?: string;
-  country?: string;
-  taxId?: string;
-  registrationNumber?: string;
-};
-
-export type UpdateEmailSettingsInput = {
-  provider: "RESEND" | "SMTP";
-  fromName: string;
-  fromEmail: string;
-  replyToEmail?: string;
-  smtpHost?: string;
-  smtpPort?: number;
-  smtpUser?: string;
-  smtpSecurity?: "tls" | "ssl" | "none";
-};
-
 
 export async function updateBrandSettingsAction(
   input: UpdateBrandSettingsInput
@@ -214,9 +249,28 @@ export async function updateBrandSettingsAction(
     },
   });
 
-  // Sidebar + layout should pick up brand changes
   revalidatePath("/", "layout");
 }
+
+/* ------------------------------------------------------------------ */
+/* COMPANY SETTINGS                                                   */
+/* ------------------------------------------------------------------ */
+
+export type UpdateCompanySettingsInput = {
+  companyName: string;
+  legalName?: string;
+  email?: string;
+  phone?: string;
+  website?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  taxId?: string;
+  registrationNumber?: string;
+};
 
 export async function updateCompanySettingsAction(
   input: UpdateCompanySettingsInput
@@ -287,8 +341,19 @@ export async function updateCompanySettingsAction(
 }
 
 /* ------------------------------------------------------------------ */
-/* EMAIL SETTINGS (RESEND)                                            */
+/* EMAIL SETTINGS (RESEND / SMTP)                                     */
 /* ------------------------------------------------------------------ */
+
+export type UpdateEmailSettingsInput = {
+  provider: "RESEND" | "SMTP";
+  fromName: string;
+  fromEmail: string;
+  replyToEmail?: string;
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpUser?: string;
+  smtpSecurity?: "tls" | "ssl" | "none";
+};
 
 export async function updateEmailSettingsAction(
   input: UpdateEmailSettingsInput

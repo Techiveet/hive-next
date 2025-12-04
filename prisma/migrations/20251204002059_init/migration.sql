@@ -4,6 +4,7 @@ CREATE TABLE `user` (
     `name` TEXT NOT NULL,
     `email` VARCHAR(191) NOT NULL,
     `emailVerified` BOOLEAN NOT NULL DEFAULT false,
+    `twoFactorEnabled` BOOLEAN NOT NULL DEFAULT false,
     `image` LONGTEXT NULL,
     `avatarUrl` LONGTEXT NULL,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -195,13 +196,15 @@ CREATE TABLE `File` (
 
 -- CreateTable
 CREATE TABLE `FileManagerSettings` (
-    `id` VARCHAR(191) NOT NULL DEFAULT 'global',
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NULL,
     `maxFileSizeMb` INTEGER NOT NULL DEFAULT 50,
     `allowedExtensions` JSON NOT NULL,
     `autoEmptyRecycleBinDays` INTEGER NOT NULL DEFAULT 30,
     `requireDeleteConfirmation` BOOLEAN NOT NULL DEFAULT true,
     `allowPublicSharing` BOOLEAN NOT NULL DEFAULT false,
 
+    UNIQUE INDEX `FileManagerSettings_tenantId_key`(`tenantId`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -217,6 +220,7 @@ CREATE TABLE `AppSettings` (
     `defaultTheme` VARCHAR(191) NOT NULL DEFAULT 'system',
     `allowUserThemeOverride` BOOLEAN NOT NULL DEFAULT true,
     `enforceTwoFactor` BOOLEAN NOT NULL DEFAULT false,
+    `sessionTimeout` INTEGER NOT NULL DEFAULT 30,
     `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updatedAt` DATETIME(3) NOT NULL,
 
@@ -284,6 +288,22 @@ CREATE TABLE `EmailSettings` (
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
+-- CreateTable
+CREATE TABLE `Language` (
+    `id` VARCHAR(191) NOT NULL,
+    `tenantId` VARCHAR(191) NULL,
+    `code` VARCHAR(191) NOT NULL,
+    `name` VARCHAR(191) NOT NULL,
+    `isDefault` BOOLEAN NOT NULL DEFAULT false,
+    `isEnabled` BOOLEAN NOT NULL DEFAULT true,
+    `translations` JSON NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+
+    UNIQUE INDEX `Language_tenantId_code_key`(`tenantId`, `code`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
 -- AddForeignKey
 ALTER TABLE `session` ADD CONSTRAINT `session_userId_fkey` FOREIGN KEY (`userId`) REFERENCES `user`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -342,6 +362,9 @@ ALTER TABLE `File` ADD CONSTRAINT `File_folderId_fkey` FOREIGN KEY (`folderId`) 
 ALTER TABLE `File` ADD CONSTRAINT `File_ownerId_fkey` FOREIGN KEY (`ownerId`) REFERENCES `user`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE `FileManagerSettings` ADD CONSTRAINT `FileManagerSettings_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE `AppSettings` ADD CONSTRAINT `AppSettings_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -352,3 +375,6 @@ ALTER TABLE `CompanySettings` ADD CONSTRAINT `CompanySettings_tenantId_fkey` FOR
 
 -- AddForeignKey
 ALTER TABLE `EmailSettings` ADD CONSTRAINT `EmailSettings_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `Language` ADD CONSTRAINT `Language_tenantId_fkey` FOREIGN KEY (`tenantId`) REFERENCES `Tenant`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;

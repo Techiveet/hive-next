@@ -1,0 +1,18 @@
+{
+  "auth.login": "ግባት",
+  "auth.logout": "ውጣ",
+  "common.cancel": "ሰርዝ",
+  "common.save": "ለውጦችን አስቀምጥ",
+  "dashboard.title": "ዳሽቦርድ",
+  "settings.profile": "መገለጫ",
+  "settings.security": "ደህንነት",
+  "sidebar.billing": "ክፍያ",
+  "sidebar.dashboard": "ዳሽቦርድ",
+  "sidebar.files": "ፋይሎች",
+  "sidebar.home": "መነሻ",
+  "sidebar.security": "ደህንነት",
+  "sidebar.settings": "ቅንብሮች",
+  "sidebar.tenants": "ተከራዮች",
+  "validation.email": "እባክዎ ትክክለኛ ኢሜይል ያስገቡ",
+  "validation.required": "ይህ መስክ ያስፈልጋል"
+}
