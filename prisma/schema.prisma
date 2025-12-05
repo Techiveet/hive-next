@@ -41,7 +41,7 @@ model User {
 
   sessions            Session[]
   accounts            Account[]
-  passwordSetupTokens PasswordSetupToken[] // 👈 one-time password setup tokens
+  passwordSetupTokens PasswordSetupToken[]
 
   @@unique([email])
   @@map("user")
@@ -59,7 +59,7 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([token])
-  @@index([userId(length: 191)])
+  @@index([userId(length: 191)], map: "session_user_idx_v3")
   @@map("session")
 }
 
@@ -80,7 +80,7 @@ model Account {
   updatedAt             DateTime  @updatedAt
 
   @@unique([providerId, accountId])
-  @@index([userId])
+  @@index([userId], map: "account_user_idx_v3")
   @@map("account")
 }
 
@@ -92,7 +92,7 @@ model Verification {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@index([identifier(length: 191)])
+  @@index([identifier(length: 191)], map: "verification_identifier_idx_v3")
   @@map("verification")
 }
 
@@ -105,7 +105,7 @@ model PasswordSetupToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
 
-  @@index([userId(length: 191)])
+  @@index([userId(length: 191)], map: "password_setup_token_user_idx_v3")
   @@map("password_setup_token")
 }
 
@@ -147,10 +147,12 @@ model Tenant {
   emailSettings       EmailSettings?
   fileManagerSettings FileManagerSettings?
   
-  // ✅ NEW: Backup Relations
+  // ✅ ADDED: Storage Settings relation
+  storageSettings     StorageSettings?
+
+  // ✅ BACKUP & LANGUAGES
   backupSettings      BackupSettings?
   backups             BackupHistory[]
-  
   languages           Language[]
 }
 
@@ -376,27 +378,28 @@ model EmailSettings {
   fromEmail    String
   replyToEmail String?
 
-  // Optional SMTP config – non-secret
   smtpHost     String?
   smtpPort     Int?
   smtpUser     String?
-  smtpSecurity String? // "tls" | "ssl" | "none"
+  smtpSecurity String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+// =====================
+//    LOCALIZATION
+// =====================
 
 model Language {
   id       String  @id @default(cuid())
   tenantId String?
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  code      String // e.g., "am", "fr", "es"
-  name      String // e.g., "Amharic", "French"
+  code      String
+  name      String
   isDefault Boolean @default(false)
   isEnabled Boolean @default(true)
-
-  // Stores the actual translations
   translations Json @default("{}")
 
   createdAt DateTime @default(now())
@@ -415,9 +418,9 @@ model BackupSettings {
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   enabled   Boolean @default(false)
-  frequency String  @default("DAILY") // DAILY, WEEKLY, MONTHLY
-  time      String  @default("00:00") // 24h format
-  retention Int     @default(7)       // How many backups to keep
+  frequency String  @default("DAILY")
+  time      String  @default("00:00")
+  retention Int     @default(7)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -429,12 +432,60 @@ model BackupHistory {
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   filename String
-  path     String  @db.Text // Local path or S3 URL
-  size     BigInt  // Bytes
-  status   String  // SUCCESS, FAILED
-  type     String  // MANUAL, AUTOMATIC
+  path     String  @db.Text
+  size     BigInt
+  status   String
+  type     String
 
   createdAt DateTime @default(now())
 
   @@index([tenantId])
+}
+
+// =====================
+//    CRON JOB REGISTRY
+// =====================
+
+model SystemCron {
+  id          String   @id @default(cuid())
+  key         String   @unique 
+  name        String
+  description String?
+  
+  schedule    String   
+  url         String   
+  
+  lastRunAt   DateTime?
+  lastStatus  String?
+  lastMessage String?  @db.Text
+  
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// =====================
+//    STORAGE SETTINGS
+// =====================
+
+model StorageSettings {
+  id        String   @id @default(cuid())
+  tenantId  String?  @unique
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // Provider Type
+  provider  String   @default("LOCAL") // LOCAL, S3, R2, SPACES, GDRIVE
+
+  // S3 / R2 / Spaces Credentials
+  accessKeyId     String? @db.Text
+  secretAccessKey String? @db.Text
+  endpoint        String? @db.Text // Needed for R2/Spaces (e.g., nyc3.digitaloceanspaces.com)
+  region          String? @db.Text
+  bucket          String? @db.Text
+  
+  // Google Drive (Service Account JSON)
+  gdriveJson      String? @db.Text 
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }

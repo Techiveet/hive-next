@@ -1,38 +1,67 @@
-import { NextResponse } from "next/server";
-import { format } from "date-fns";
+import { NextRequest, NextResponse } from "next/server";
+import { format, subDays, subMinutes } from "date-fns";
+
 import { generateBackup } from "@/lib/backup-service";
+import { getStorageProvider } from "@/lib/storage-factory";
 import { prisma } from "@/lib/prisma";
+import { revalidatePath } from "next/cache";
+import { runCronJob } from "@/lib/cron-service";
 
-// This route is hit by your Cron Job (or PowerShell loop) every minute
-export async function GET() {
-  try {
-    // 1. Get current time (Server Time)
+export async function GET(req: NextRequest) {
+  return runCronJob("backup", async () => {
+    const { searchParams } = new URL(req.url);
+    const forceMode = searchParams.get("force") === "true";
+
     const now = new Date();
-    const currentTime = format(now, "HH:mm"); // e.g., "14:30"
+    const currentTime = format(now, "HH:mm"); 
 
-    console.log(`[Cron] Checking backup schedule for: ${currentTime}`);
+    console.log(`[Cron] 🕒 Server Time: ${currentTime} | Force Mode: ${forceMode}`);
 
-    // 2. Find settings that match NOW and are ENABLED
-    const targets = await prisma.backupSettings.findMany({
-      where: {
-        enabled: true,
-        time: currentTime, 
-      },
+    // 1. Fetch ALL enabled settings first to debug
+    const allEnabled = await prisma.backupSettings.findMany({
+      where: { enabled: true }
     });
 
+    // 2. Filter in memory (easier to debug than Prisma query sometimes)
+    const targets = forceMode 
+        ? allEnabled 
+        : allEnabled.filter(s => s.time === currentTime);
+
     if (targets.length === 0) {
-      return NextResponse.json({ message: "No backups scheduled for this time." });
+      if (allEnabled.length > 0) {
+          // Log what we found to help you debug
+          console.log(`[Cron] ⚠️  No match. Server is ${currentTime}, but you scheduled: ${allEnabled.map(s => s.time).join(", ")}`);
+      } else {
+          console.log(`[Cron] No backups are enabled.`);
+      }
+      return { success: true, message: `No backups due.` };
     }
 
-    // 3. Run Backups
+    console.log(`[Cron] ✅ Found ${targets.length} backups to run.`);
+
     const results = [];
+
     for (const setting of targets) {
       try {
         const tenantId = setting.tenantId;
+
+        // Deduplication
+        if (!forceMode) {
+            const alreadyRan = await prisma.backupHistory.findFirst({
+                where: {
+                    tenantId: tenantId,
+                    type: "AUTOMATIC",
+                    createdAt: { gt: subMinutes(now, 1) },
+                },
+            });
+
+            if (alreadyRan) {
+                console.log(`[Cron] Skipping duplicate for ${tenantId || "System"}`);
+                continue; 
+            }
+        }
         
-        console.log(`[Cron] Starting AUTOMATIC backup for ${tenantId || "Central System"}...`);
-        
-        // ✅ CRITICAL: We pass "full" here to ensure Database + Public Folder are included
+        console.log(`[Cron] 🚀 Running backup for ${tenantId || "System"}...`);
         const backup = await generateBackup(tenantId, "full"); 
 
         await prisma.backupHistory.create({
@@ -45,15 +74,37 @@ export async function GET() {
             type: "AUTOMATIC",
           },
         });
+
+        // Cleanup
+        if (setting.retention > 0) {
+            await cleanupOldBackups(tenantId, setting.retention);
+        }
+
         results.push({ tenantId, status: "Success", file: backup.filename });
       } catch (e: any) {
-        console.error(`[Cron] Failed for ${setting.tenantId}`, e);
+        console.error(`[Cron] ❌ Failed:`, e);
         results.push({ tenantId: setting.tenantId, status: "Failed", error: e.message });
       }
     }
 
-    return NextResponse.json({ success: true, ran: results.length, details: results });
-  } catch (error: any) {
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
-  }
+    revalidatePath("/settings"); 
+    return { success: true, ran: results.length, details: results };
+  });
+}
+
+async function cleanupOldBackups(tenantId: string | null, retentionDays: number) {
+    const cutoffDate = subDays(new Date(), retentionDays);
+    const storage = await getStorageProvider(tenantId); 
+
+    const oldBackups = await prisma.backupHistory.findMany({
+        where: { tenantId, createdAt: { lt: cutoffDate } }
+    });
+
+    for (const backup of oldBackups) {
+        try {
+            await storage.delete(backup.path);
+            console.log(`[Cleanup] Deleted: ${backup.filename}`);
+        } catch (err) {}
+        await prisma.backupHistory.delete({ where: { id: backup.id } });
+    }
 }

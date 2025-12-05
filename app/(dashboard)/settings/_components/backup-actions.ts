@@ -6,12 +6,12 @@ import { getTenantAndUser } from "@/lib/get-tenant-and-user";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
-// ✅ 1. Fetch Settings (Restored)
+// ✅ 1. Fetch Settings (Use findFirst)
 export async function getBackupSettingsAction() {
   const { tenant } = await getTenantAndUser();
   const tenantId = tenant?.id ?? null; 
 
-  // Use findFirst to handle Central Admin (null tenantId) correctly
+  // FIX: Use findFirst to safely query with a potentially null tenantId
   const settings = await prisma.backupSettings.findFirst({
     where: { tenantId: tenantId }
   });
@@ -26,6 +26,7 @@ export async function saveBackupSettingsAction(settings: any) {
 
   const tenantId = tenant?.id ?? null;
 
+  // Check if settings exist for this tenant (or null)
   const existing = await prisma.backupSettings.findFirst({
       where: { tenantId }
   });
@@ -55,14 +56,12 @@ export async function saveBackupSettingsAction(settings: any) {
   revalidatePath("/settings");
 }
 
-// ✅ 3. Manual Backup (With Scope Support Restored)
-// Accepts 'database' | 'files' | 'full' to match your UI buttons
+// ✅ 3. Manual Backup (Fixing Path Handling)
 export async function performManualBackupAction(scope: "database" | "files" | "full" = "full") {
   const { tenant } = await getTenantAndUser();
   if (tenant && tenant.slug !== "central-hive") throw new Error("Unauthorized");
 
   try {
-    // Pass the scope to the generator
     const result = await generateBackup(tenant?.id, scope);
 
     await prisma.backupHistory.create({
@@ -79,8 +78,8 @@ export async function performManualBackupAction(scope: "database" | "files" | "f
     revalidatePath("/settings");
     return { success: true };
   } catch (error: any) {
-    console.error(error);
-    return { success: false, error: error.message };
+    console.error("Backup Failed:", error);
+    return { success: false, error: error.message || "Unknown error" };
   }
 }
 
@@ -110,6 +109,6 @@ export async function getBackupHistoryAction() {
    
    return history.map(h => ({
        ...h,
-       size: h.size.toString() // Convert BigInt for Client Component
+       size: h.size.toString() 
    }));
 }

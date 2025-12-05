@@ -10,6 +10,8 @@
     "i18n:sync": "tsx scripts/seed-translations.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.943.0",
+    "@aws-sdk/s3-request-presigner": "^3.943.0",
     "@prisma/client": "^6.19.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-avatar": "^1.1.11",
@@ -35,6 +37,7 @@
     "dotenv": "^17.2.3",
     "filepond": "^4.32.10",
     "filepond-plugin-image-preview": "^4.6.12",
+    "googleapis": "^167.0.0",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.554.0",
