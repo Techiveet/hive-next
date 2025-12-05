@@ -4,6 +4,7 @@ import { FileManagerEventListener } from "@/components/file-manager/file-manager
 import { PermissionsProvider } from "@/components/providers/permissions-provider";
 import { SessionGuard } from "@/components/session-guard";
 import { TwoFactorEnforcer } from "@/components/two-factor-enforcer";
+import { checkIpRestriction } from "@/lib/ip-guard"; // ✅ Import IP Guard
 import { getCurrentSession } from "@/lib/auth-server";
 import { getCurrentUserPermissions } from "@/lib/permissions";
 import { headers } from "next/headers";
@@ -22,7 +23,16 @@ const DEFAULT_DICTIONARY = {
   "common.cancel": "Cancel",
   "settings.profile": "Profile",
   "settings.security": "Security",
-  // Add more default keys here as needed
+  
+  // ✅ Added new keys for sidebar
+  "sidebar.dashboard": "Dashboard",
+  "sidebar.tenants": "Tenants",
+  "sidebar.security": "Security",
+  "sidebar.files": "Files",
+  "sidebar.billing": "Billing",
+  
+  "validation.email": "Please enter a valid email",
+  "validation.required": "This field is required"
 };
 
 // 🔹 Use SAME tenant resolution logic as SignIn
@@ -63,6 +73,16 @@ export default async function DashboardLayout({
 
   // 👇 Same tenantId as SignIn now
   const tenantId = await resolveTenantIdFromHost();
+
+  // ✅ SECURITY CHECK: IP RESTRICTION
+  // We check this BEFORE fetching huge data to save resources
+  const ipCheck = await checkIpRestriction(tenantId);
+  
+  if (!ipCheck.allowed) {
+      console.warn(`[IP Guard] Blocked ${user.email} from ${ipCheck.ip}`);
+      // Redirect to a dedicated error page or sign-in with error
+      redirect("/ip-restricted"); 
+  }
 
   // Parallel fetch for Permissions, Brand, App Settings AND Languages
   const [permissions, brand, appSettings, languages] = await Promise.all([

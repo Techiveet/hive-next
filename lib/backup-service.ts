@@ -1,26 +1,27 @@
 import archiver from "archiver";
 import { exec } from "child_process";
 import fs from "fs";
-import { getStorageProvider } from "./storage-factory";
+import { getStorageProvider } from "@/lib/storage-factory";
 import path from "path";
 
 type BackupScope = "database" | "files" | "full";
 
 export async function generateBackup(tenantId: string | null = "central", scope: BackupScope = "full") {
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const fileName = `backup-${scope}-${tenantId}-${timestamp}.zip`;
+  const fileName = `backup-${scope}-${tenantId ?? "system"}-${timestamp}.zip`;
   
-  // 1. Setup Staging
+  // 1. Setup Local Staging Area (Temp)
   const stagingDir = path.join(process.cwd(), "storage", "temp");
   if (!fs.existsSync(stagingDir)) fs.mkdirSync(stagingDir, { recursive: true });
-  
   const stagingPath = path.join(stagingDir, fileName);
 
+  // 2. Parse Database Config
   const dbUrl = process.env.DATABASE_URL || "";
   const match = dbUrl.match(/mysql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/([^?]+)/);
   
+  // 3. Start Archiving
   const output = fs.createWriteStream(stagingPath);
-  const archive = archiver("zip", { zlib: { level: 9 } });
+const archive = archiver("zip", { zlib: { level: 1 } });
 
   return new Promise<{ filename: string; path: string; size: number; isCloud: boolean }>((resolve, reject) => {
     
@@ -29,19 +30,18 @@ export async function generateBackup(tenantId: string | null = "central", scope:
         console.log(`[Backup] Zip created (${finalSize} bytes). Uploading...`);
 
         try {
-            // ✅ FIX: Force 'null' (Central Settings) for ALL backups.
-            // This ensures Tenant backups go to the Admin's Google Drive/S3
-            // instead of looking for the Tenant's missing credentials.
+            // ✅ FIX: Always use Central Admin (null) storage settings for backups
+            // This ensures tenant backups go to the Admin's S3/Drive/Local folder
             const storage = await getStorageProvider(null); 
             
-            console.log(`[Backup] Using Storage Provider: ${storage.name}`);
+            console.log(`[Backup] Destination Provider: ${storage.name}`);
 
+            // Upload
             const storedPath = await storage.upload(stagingPath, `backups/${fileName}`, "application/zip");
-            
             console.log(`[Backup] Uploaded to: ${storedPath}`);
 
-            // Cleanup Staging
-            fs.unlinkSync(stagingPath);
+            // Cleanup Temp File
+            try { fs.unlinkSync(stagingPath); } catch(e) {}
 
             resolve({
                 filename: fileName,
@@ -62,9 +62,10 @@ export async function generateBackup(tenantId: string | null = "central", scope:
     if (scope === "files" || scope === "full") {
       const publicDir = path.join(process.cwd(), "public");
       if (fs.existsSync(publicDir)) {
+        // Archive the whole public folder (uploads, etc)
         archive.directory(publicDir, "public"); 
       } else {
-        archive.append("No public files.", { name: "readme.txt" }); 
+        archive.append("No public files found.", { name: "readme.txt" }); 
       }
     }
 
@@ -75,6 +76,8 @@ export async function generateBackup(tenantId: string | null = "central", scope:
         return;
       }
       const [_, user, password, host, port, database] = match;
+      
+      // Windows Fix: Use .env path if available, else default
       const dumpTool = process.env.MYSQL_DUMP_PATH || 'mysqldump';
       const dumpCommand = `"${dumpTool}" -h ${host} -P ${port} -u ${user} -p"${password}" --single-transaction --quick --lock-tables=false ${database}`;
 
@@ -87,6 +90,7 @@ export async function generateBackup(tenantId: string | null = "central", scope:
         archive.finalize(); 
       });
     } else {
+      // Files only
       archive.finalize();
     }
   });

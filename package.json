@@ -38,6 +38,7 @@
     "filepond": "^4.32.10",
     "filepond-plugin-image-preview": "^4.6.12",
     "googleapis": "^167.0.0",
+    "ipaddr.js": "^2.3.0",
     "jspdf": "^3.0.4",
     "jspdf-autotable": "^5.0.2",
     "lucide-react": "^0.554.0",

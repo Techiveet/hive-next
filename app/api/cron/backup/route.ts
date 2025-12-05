@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { format, subDays, subMinutes } from "date-fns";
+import { format, subMinutes } from "date-fns";
 
 import { generateBackup } from "@/lib/backup-service";
-import { getStorageProvider } from "@/lib/storage-factory";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
+import { runBackupCleanup } from "@/lib/backup-cleanup";
 import { runCronJob } from "@/lib/cron-service";
 
 export async function GET(req: NextRequest) {
@@ -13,31 +13,20 @@ export async function GET(req: NextRequest) {
     const forceMode = searchParams.get("force") === "true";
 
     const now = new Date();
-    const currentTime = format(now, "HH:mm"); 
+    const currentTime = format(now, "HH:mm");
 
-    console.log(`[Cron] 🕒 Server Time: ${currentTime} | Force Mode: ${forceMode}`);
+    console.log(`[Cron] 🕒 Time: ${currentTime} | Force: ${forceMode}`);
 
-    // 1. Fetch ALL enabled settings first to debug
-    const allEnabled = await prisma.backupSettings.findMany({
-      where: { enabled: true }
+    const targets = await prisma.backupSettings.findMany({
+      where: {
+        enabled: true,
+        ...(forceMode ? {} : { time: currentTime }), 
+      },
     });
 
-    // 2. Filter in memory (easier to debug than Prisma query sometimes)
-    const targets = forceMode 
-        ? allEnabled 
-        : allEnabled.filter(s => s.time === currentTime);
-
     if (targets.length === 0) {
-      if (allEnabled.length > 0) {
-          // Log what we found to help you debug
-          console.log(`[Cron] ⚠️  No match. Server is ${currentTime}, but you scheduled: ${allEnabled.map(s => s.time).join(", ")}`);
-      } else {
-          console.log(`[Cron] No backups are enabled.`);
-      }
-      return { success: true, message: `No backups due.` };
+      return { success: true, message: "No backups due." };
     }
-
-    console.log(`[Cron] ✅ Found ${targets.length} backups to run.`);
 
     const results = [];
 
@@ -47,24 +36,16 @@ export async function GET(req: NextRequest) {
 
         // Deduplication
         if (!forceMode) {
-            const alreadyRan = await prisma.backupHistory.findFirst({
-                where: {
-                    tenantId: tenantId,
-                    type: "AUTOMATIC",
-                    createdAt: { gt: subMinutes(now, 1) },
-                },
+            const lastRun = await prisma.backupHistory.findFirst({
+              where: { tenantId, type: "AUTOMATIC", createdAt: { gt: subMinutes(now, 1) } },
             });
-
-            if (alreadyRan) {
-                console.log(`[Cron] Skipping duplicate for ${tenantId || "System"}`);
-                continue; 
-            }
+            if (lastRun) continue; 
         }
         
-        console.log(`[Cron] 🚀 Running backup for ${tenantId || "System"}...`);
+        console.log(`[Cron] 🚀 Auto Backup...`);
         const backup = await generateBackup(tenantId, "full"); 
 
-        await prisma.backupHistory.create({
+        const newRecord = await prisma.backupHistory.create({
           data: {
             tenantId: tenantId,
             filename: backup.filename,
@@ -75,36 +56,19 @@ export async function GET(req: NextRequest) {
           },
         });
 
-        // Cleanup
-        if (setting.retention > 0) {
-            await cleanupOldBackups(tenantId, setting.retention);
+        // ✅ Run Auto-Delete
+        if (setting.retention >= 0) {
+            await runBackupCleanup(tenantId, setting.retention, newRecord.id);
         }
 
-        results.push({ tenantId, status: "Success", file: backup.filename });
+        results.push({ tenantId, status: "Success" });
       } catch (e: any) {
-        console.error(`[Cron] ❌ Failed:`, e);
-        results.push({ tenantId: setting.tenantId, status: "Failed", error: e.message });
+        console.error(`[Cron] Error:`, e);
+        results.push({ tenantId: setting.tenantId, status: "Failed" });
       }
     }
 
     revalidatePath("/settings"); 
     return { success: true, ran: results.length, details: results };
   });
-}
-
-async function cleanupOldBackups(tenantId: string | null, retentionDays: number) {
-    const cutoffDate = subDays(new Date(), retentionDays);
-    const storage = await getStorageProvider(tenantId); 
-
-    const oldBackups = await prisma.backupHistory.findMany({
-        where: { tenantId, createdAt: { lt: cutoffDate } }
-    });
-
-    for (const backup of oldBackups) {
-        try {
-            await storage.delete(backup.path);
-            console.log(`[Cleanup] Deleted: ${backup.filename}`);
-        } catch (err) {}
-        await prisma.backupHistory.delete({ where: { id: backup.id } });
-    }
 }

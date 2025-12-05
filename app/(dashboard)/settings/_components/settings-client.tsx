@@ -52,6 +52,8 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { Network } from "lucide-react"; 
+import { IpManager } from "./ip-manager";
 
 type SettingsClientProps = {
   user: {
@@ -119,9 +121,10 @@ type SettingsSection =
   | "email"
   | "notifications"
   | "localization"
-  | "storage" // ✅ Added storage
+  | "storage"
   | "backups"
-  | "cron";
+  | "cron"
+  | "ip-restriction"; // ✅ Added IP Restriction
 
 export function SettingsClient({
   user,
@@ -190,6 +193,7 @@ export function SettingsClient({
   const canViewStorage = isCentral && canManageTenant; // ✅ Storage Guard
   const canViewBackups = isCentral && canManageTenant;
   const canViewCron = isCentral && canManageTenant;
+  const canViewIpRestriction = isCentral || has("manage_security"); // ✅ Allow Tenants if they have permission
 
   // ---------------------------------------------------------------------------
   // LEFT NAV MODEL
@@ -220,6 +224,12 @@ export function SettingsClient({
       icon: HardDrive,
       canView: canViewStorage,
     },
+    {
+          key: "ip-restriction" as SettingsSection, // ✅ NEW TAB
+          label: "IP Restrictions",
+          icon: Network,
+          canView: canViewIpRestriction,
+        },
     {
       key: "backups" as SettingsSection, // ✅ NEW TAB
       label: "Backups",
@@ -1220,6 +1230,18 @@ export function SettingsClient({
               <StorageSettings />
             </div>
           )}
+
+           {/* IP RESTRICTION (NEW) */}
+          {section === "ip-restriction" && canViewIpRestriction && (
+             <div className="space-y-6">
+                <div className="mb-4">
+                   <h2 className="text-lg font-medium">IP Restrictions</h2>
+                   <p className="text-sm text-muted-foreground">Manage allowed IP addresses for accessing this dashboard.</p>
+                </div>
+                <IpManager />
+             </div>
+          )}
+
 
           {/* BACKUP TAB (NEW) */}
           {/* ✅ Only visible to Central Admin */}

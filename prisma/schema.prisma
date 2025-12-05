@@ -47,6 +47,7 @@ model User {
   @@map("user")
 }
 
+// 1. Update Session Model
 model Session {
   id        String   @id
   expiresAt DateTime
@@ -59,10 +60,12 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([token])
-  @@index([userId(length: 191)], map: "session_user_idx_v3")
+  // ✅ FIX: Bumped to v4
+  @@index([userId(length: 191)], map: "session_user_idx_v4")
   @@map("session")
 }
 
+// 2. Update Account Model
 model Account {
   id                    String    @id
   accountId             String
@@ -80,10 +83,12 @@ model Account {
   updatedAt             DateTime  @updatedAt
 
   @@unique([providerId, accountId])
-  @@index([userId], map: "account_user_idx_v3")
+  // ✅ FIX: Bumped to v4
+  @@index([userId], map: "account_user_idx_v4")
   @@map("account")
 }
 
+// 3. Update Verification Model
 model Verification {
   id         String   @id
   identifier String   @db.Text
@@ -92,11 +97,12 @@ model Verification {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@index([identifier(length: 191)], map: "verification_identifier_idx_v3")
+  // ✅ FIX: Bumped to v4
+  @@index([identifier(length: 191)], map: "verification_identifier_idx_v4")
   @@map("verification")
 }
 
-// one-time password setup / activation links
+// 4. Update PasswordSetupToken Model
 model PasswordSetupToken {
   id        String   @id @default(cuid())
   token     String   @unique
@@ -105,7 +111,8 @@ model PasswordSetupToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
 
-  @@index([userId(length: 191)], map: "password_setup_token_user_idx_v3")
+  // ✅ FIX: Bumped to v4 (This was the specific error)
+  @@index([userId(length: 191)], map: "password_setup_token_user_idx_v4")
   @@map("password_setup_token")
 }
 
@@ -154,6 +161,9 @@ model Tenant {
   backupSettings      BackupSettings?
   backups             BackupHistory[]
   languages           Language[]
+  
+  // ✅ ADDED: IP Settings relation (Fixes your error)
+  ipSettings          IpSettings?
 }
 
 model TenantDomain {
@@ -378,10 +388,11 @@ model EmailSettings {
   fromEmail    String
   replyToEmail String?
 
+  // Optional SMTP config – non-secret
   smtpHost     String?
   smtpPort     Int?
   smtpUser     String?
-  smtpSecurity String?
+  smtpSecurity String? // "tls" | "ssl" | "none"
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -396,10 +407,12 @@ model Language {
   tenantId String?
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  code      String
-  name      String
+  code      String // e.g., "am", "fr", "es"
+  name      String // e.g., "Amharic", "French"
   isDefault Boolean @default(false)
   isEnabled Boolean @default(true)
+
+  // Stores the actual translations
   translations Json @default("{}")
 
   createdAt DateTime @default(now())
@@ -418,9 +431,9 @@ model BackupSettings {
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   enabled   Boolean @default(false)
-  frequency String  @default("DAILY")
-  time      String  @default("00:00")
-  retention Int     @default(7)
+  frequency String  @default("DAILY") // DAILY, WEEKLY, MONTHLY
+  time      String  @default("00:00") // 24h format
+  retention Int     @default(7)       // How many backups to keep
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -432,10 +445,10 @@ model BackupHistory {
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   filename String
-  path     String  @db.Text
-  size     BigInt
-  status   String
-  type     String
+  path     String  @db.Text // Local path or S3 URL
+  size     BigInt  // Bytes
+  status   String  // SUCCESS, FAILED
+  type     String  // MANUAL, AUTOMATIC
 
   createdAt DateTime @default(now())
 
@@ -448,12 +461,12 @@ model BackupHistory {
 
 model SystemCron {
   id          String   @id @default(cuid())
-  key         String   @unique 
+  key         String   @unique // e.g. "backup-daily"
   name        String
   description String?
   
-  schedule    String   
-  url         String   
+  schedule    String   // e.g. "0 0 * * *"
+  url         String   // e.g. "/api/cron/backup"
   
   lastRunAt   DateTime?
   lastStatus  String?
@@ -485,6 +498,26 @@ model StorageSettings {
   
   // Google Drive (Service Account JSON)
   gdriveJson      String? @db.Text 
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// =====================
+//    IP RESTRICTION
+// =====================
+
+model IpSettings {
+  id        String   @id @default(cuid())
+  tenantId  String?  @unique
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  enabled   Boolean  @default(false)
+  
+  // ✅ ADD THIS MISSING FIELD
+  strategy  String   @default("ALLOW") // "ALLOW" or "BLOCK"
+  
+  allowList Json     @default("[]") 
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
