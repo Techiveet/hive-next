@@ -21,6 +21,8 @@ model User {
   
   // Custom Security Field
   twoFactorEnabled Boolean @default(false)
+  twoFactorSecret        String? @db.Text
+  twoFactorRecoveryCodes String? @db.Text
 
   // make both large enough for long URLs / base64
   image         String?   @db.LongText
@@ -47,7 +49,6 @@ model User {
   @@map("user")
 }
 
-// 1. Update Session Model
 model Session {
   id        String   @id
   expiresAt DateTime
@@ -60,12 +61,10 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([token])
-  // ✅ FIX: Bumped to v4
   @@index([userId(length: 191)], map: "session_user_idx_v4")
   @@map("session")
 }
 
-// 2. Update Account Model
 model Account {
   id                    String    @id
   accountId             String
@@ -83,12 +82,10 @@ model Account {
   updatedAt             DateTime  @updatedAt
 
   @@unique([providerId, accountId])
-  // ✅ FIX: Bumped to v4
   @@index([userId], map: "account_user_idx_v4")
   @@map("account")
 }
 
-// 3. Update Verification Model
 model Verification {
   id         String   @id
   identifier String   @db.Text
@@ -97,12 +94,11 @@ model Verification {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  // ✅ FIX: Bumped to v4
   @@index([identifier(length: 191)], map: "verification_identifier_idx_v4")
   @@map("verification")
 }
 
-// 4. Update PasswordSetupToken Model
+// one-time password setup / activation links
 model PasswordSetupToken {
   id        String   @id @default(cuid())
   token     String   @unique
@@ -111,7 +107,6 @@ model PasswordSetupToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
 
-  // ✅ FIX: Bumped to v4 (This was the specific error)
   @@index([userId(length: 191)], map: "password_setup_token_user_idx_v4")
   @@map("password_setup_token")
 }
@@ -162,7 +157,7 @@ model Tenant {
   backups             BackupHistory[]
   languages           Language[]
   
-  // ✅ ADDED: IP Settings relation (Fixes your error)
+  // ✅ ADDED: IP Settings relation
   ipSettings          IpSettings?
 }
 
@@ -514,9 +509,10 @@ model IpSettings {
 
   enabled   Boolean  @default(false)
   
-  // ✅ ADD THIS MISSING FIELD
-  strategy  String   @default("ALLOW") // "ALLOW" or "BLOCK"
+  // ✅ ADDED: Strategy Field
+  strategy  String   @default("ALLOW") // "ALLOW" (Whitelist) or "BLOCK" (Blacklist)
   
+  // Structure: [{ ip: "1.2.3.4", label: "Office VPN" }, ...]
   allowList Json     @default("[]") 
 
   createdAt DateTime @default(now())

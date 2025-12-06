@@ -171,7 +171,11 @@ export default async function DashboardLayout({
         <FileManagerEventListener />
 
         <DashboardShell
-          user={{ name: user.name ?? null, email: user.email }}
+         user={{
+          name: user.name ?? null,
+          email: user.email,
+          image: user.image ?? null,      // 🔥 add this
+        }}
           permissions={permissions}
           // ✅ Pass Locale & Languages to Shell (for Navbar Switcher)
           currentLocale={activeLocale}
