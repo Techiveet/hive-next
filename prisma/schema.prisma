@@ -18,6 +18,9 @@ model User {
   name          String    @db.Text
   email         String
   emailVerified Boolean   @default(false)
+
+  sentEmails    Email[]   @relation("Sender")
+  receivedEmails EmailRecipient[]
   
   // Custom Security Field
   twoFactorEnabled Boolean @default(false)
@@ -47,6 +50,45 @@ model User {
 
   @@unique([email])
   @@map("user")
+}
+
+model Email {
+  id        String   @id @default(uuid())
+  subject   String
+  body      String   @db.Text
+  
+  senderId  String
+  sender    User     @relation("Sender", fields: [senderId], references: [id])
+
+  recipients EmailRecipient[]
+  
+  // ✅ ADD THIS
+  isStarred Boolean @default(false) 
+
+  // Tracks if sender moved it to trash/archive
+  senderFolder String @default("sent") // "sent", "archive", "trash"
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model EmailRecipient {
+  id        String   @id @default(uuid())
+  
+  emailId   String
+  email     Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  
+  isRead    Boolean  @default(false)
+  // ✅ ADD THIS
+  isStarred Boolean  @default(false) 
+  folder    String   @default("inbox")
+  
+  createdAt DateTime @default(now())
+
+  @@unique([emailId, userId])
 }
 
 model Session {

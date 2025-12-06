@@ -1,5 +1,6 @@
 "use client";
 
+import { EmailMenu, type UnreadEmailData } from "@/components/email-menu"; 
 import { useEffect, useState } from "react";
 
 import { LanguageSwitcher } from "@/components/language-switcher";
@@ -10,15 +11,26 @@ type NavbarProps = {
   user?: {
     name: string | null;
     email: string;
-  };
+    image?: string | null;
+    // ✅ Make sure 'id' is passed here if not already defined in your types!
+    // But usually 'user' prop in navbar comes from the shell which has name/email/image.
+    // If your user object DOES NOT have ID, we need to add it.
+  } & { id?: string }; // Fallback type intersection
+  
   currentLocale?: string;
   languages?: { code: string; name: string }[];
+  
+  emailData?: {
+    count: number;
+    items: UnreadEmailData[];
+  };
 };
 
 export function Navbar({ 
   user, 
   currentLocale = "en", 
-  languages = [] 
+  languages = [],
+  emailData 
 }: NavbarProps) {
   const [host, setHost] = useState<string | null>(null);
 
@@ -40,16 +52,22 @@ export function Navbar({
       </div>
 
       <div className="flex items-center gap-2">
-        {/* LANGUAGE SWITCHER */}
         <LanguageSwitcher 
             currentLocale={currentLocale} 
             languages={languages} 
         />
 
-        {/* THEME TOGGLE */}
         <ThemeToggle />
         
-        {/* USER MENU */}
+        {/* ✅ Pass user.id here */}
+        {emailData && user?.id && (
+            <EmailMenu 
+                unreadCount={emailData.count} 
+                latestEmails={emailData.items} 
+                userId={user.id} 
+            />
+        )}
+        
         {user && <UserMenu user={user} />}
       </div>
     </header>

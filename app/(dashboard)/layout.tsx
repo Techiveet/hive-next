@@ -5,6 +5,7 @@ import { PermissionsProvider } from "@/components/providers/permissions-provider
 import type { ReactNode } from "react";
 import { SessionGuard } from "@/components/session-guard";
 import { TwoFactorEnforcer } from "@/components/two-factor-enforcer";
+import type { UnreadEmailData } from "@/components/email-menu";
 import { checkIpRestriction } from "@/lib/ip-guard";
 import { getCurrentSession } from "@/lib/auth-server";
 import { getCurrentUserPermissions } from "@/lib/permissions";
@@ -12,7 +13,10 @@ import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 
-// 1. Define Default Dictionary (Fallback English Keys)
+// ✅ Import Types
+
+
+// 1. Define Default Dictionary
 const DEFAULT_DICTIONARY = {
   "dashboard.title": "Dashboard",
   "sidebar.home": "Home",
@@ -23,19 +27,15 @@ const DEFAULT_DICTIONARY = {
   "common.cancel": "Cancel",
   "settings.profile": "Profile",
   "settings.security": "Security",
-
-  // Sidebar
   "sidebar.dashboard": "Dashboard",
   "sidebar.tenants": "Tenants",
   "sidebar.security": "Security",
   "sidebar.files": "Files",
   "sidebar.billing": "Billing",
-
   "validation.email": "Please enter a valid email",
   "validation.required": "This field is required",
 };
 
-// 🔹 Use SAME tenant resolution logic as SignIn
 async function resolveTenantIdFromHost(): Promise<string | null> {
   const h = await headers();
   const host = (h.get("host") || "").toLowerCase();
@@ -71,7 +71,6 @@ export default async function DashboardLayout({
     redirect("/sign-in?callbackURL=/dashboard");
   }
 
-  // 👇 Same tenantId as SignIn now
   const tenantId = await resolveTenantIdFromHost();
 
   // ✅ SECURITY CHECK: IP RESTRICTION
@@ -82,8 +81,8 @@ export default async function DashboardLayout({
     redirect("/ip-restricted");
   }
 
-  // Parallel fetch for Permissions, Brand, App Settings AND Languages
-  const [permissions, brand, appSettings, languages] = await Promise.all([
+  // ✅ Parallel fetch: Permissions, Brand, Settings, Languages AND EMAILS
+  const [permissions, brand, appSettings, languages, unreadEmails, unreadCount] = await Promise.all([
     getCurrentUserPermissions(tenantId),
     prisma.brandSettings.findFirst({
       where: { tenantId },
@@ -95,9 +94,29 @@ export default async function DashboardLayout({
       where: { tenantId },
       select: { code: true, name: true, translations: true },
     }),
+    // 📧 Fetch 5 latest unread emails for the dropdown
+    prisma.emailRecipient.findMany({
+        where: { userId: user.id, isRead: false, folder: "inbox" },
+        take: 5,
+        orderBy: { createdAt: "desc" },
+        select: {
+            id: true,
+            createdAt: true,
+            email: {
+                select: {
+                    id: true,
+                    subject: true,
+                    sender: { select: { name: true, email: true } }
+                }
+            }
+        }
+    }),
+    // 📧 Fetch total unread count
+    prisma.emailRecipient.count({
+        where: { userId: user.id, isRead: false, folder: "inbox" }
+    })
   ]);
 
-  // Fallback to central brand if no tenant brand found
   let finalBrand = brand;
   if (!finalBrand) {
     finalBrand = await prisma.brandSettings.findFirst({
@@ -108,12 +127,7 @@ export default async function DashboardLayout({
   if (!permissions || permissions.length === 0) {
     if (process.env.NODE_ENV !== "production") {
       console.log(
-        "[DashboardLayout] No permissions → redirecting to /access-denied",
-        {
-          email: user.email,
-          tenantId,
-          permissionsCount: permissions?.length ?? 0,
-        }
+        "[DashboardLayout] No permissions → redirecting to /access-denied"
       );
     }
     redirect("/access-denied");
@@ -121,13 +135,10 @@ export default async function DashboardLayout({
 
   // 2. Determine Active Language
   const activeLocale = appSettings?.locale ?? "en";
-
-  // Find the active language record from the fetched list
   const activeLanguageRecord = languages.find(
     (lang) => lang.code === activeLocale
   );
 
-  // 3. Merge Default Dictionary with Database Translations
   const finalDictionary = activeLanguageRecord?.translations
     ? {
         ...DEFAULT_DICTIONARY,
@@ -135,7 +146,6 @@ export default async function DashboardLayout({
       }
     : DEFAULT_DICTIONARY;
 
-  // Construct Configuration Object (Defaults handling)
   const config = {
     timezone: appSettings?.timezone ?? "UTC",
     locale: activeLocale,
@@ -153,23 +163,19 @@ export default async function DashboardLayout({
   return (
     <PermissionsProvider permissions={permissions}>
       <AppConfigProvider config={config}>
-        {/* 1. Watch for inactivity */}
         <SessionGuard timeoutMinutes={config.sessionTimeout} />
-
-        {/* 2. Enforce 2FA if required */}
         <TwoFactorEnforcer
           enforced={config.enforceTwoFactor}
           isEnabled={user.twoFactorEnabled ?? false}
         />
-
-        {/* 3. Global File Manager Listener */}
         <FileManagerEventListener />
 
         <DashboardShell
           user={{
+            id: user.id,
             name: user.name ?? null,
             email: user.email,
-            image: user.image ?? null, // 🔥 pass profile image into shell
+            image: user.image ?? null,
           }}
           permissions={permissions}
           currentLocale={activeLocale}
@@ -179,6 +185,11 @@ export default async function DashboardLayout({
             logoLightUrl: finalBrand?.logoLightUrl ?? null,
             logoDarkUrl: finalBrand?.logoDarkUrl ?? null,
             sidebarIconUrl: finalBrand?.sidebarIconUrl ?? null,
+          }}
+          // ✅ PASS EMAIL DATA
+          emailData={{
+            count: unreadCount,
+            items: unreadEmails as UnreadEmailData[]
           }}
         >
           {children}
