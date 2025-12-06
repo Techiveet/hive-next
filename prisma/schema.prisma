@@ -430,6 +430,8 @@ model BackupSettings {
   time      String  @default("00:00") // 24h format
   retention Int     @default(7)       // How many backups to keep
 
+  notificationEmail String?
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { authClient } from "@/lib/auth-client";
+import { userHasTwoFactorEnabled } from "./_actions";
 
 /* -------------------------------------------------------------------------- */
 /*  Rate-limit helpers                                                        */
@@ -160,7 +161,7 @@ export function SignInClient({ brand }: SignInClientProps) {
   }
 
   /* ------------------------------------------------------------------------ */
-  /*  Submit                                                                  */
+  /*  Submit (fixed 2FA flow)                                                 */
   /* ------------------------------------------------------------------------ */
 
   async function handleSubmit(e: React.FormEvent) {
@@ -179,12 +180,28 @@ export function SignInClient({ brand }: SignInClientProps) {
       return;
     }
 
+    const email = form.email.trim();
+
+    // 🔐 Ask the server: does THIS email have 2FA enabled?
+    let needsTwoFactor = false;
+    try {
+      needsTwoFactor = await userHasTwoFactorEnabled(email);
+    } catch (err) {
+      console.error("Failed to determine 2FA status:", err);
+      // if this fails, we just continue as normal login
+    }
+
+    // Decide where to send the user after password auth
+    const nextUrl = needsTwoFactor
+      ? `/two-factor?callbackURL=${encodeURIComponent(callbackURL)}`
+      : callbackURL;
+
     setLoading(true);
 
     const { error } = await authClient.signIn.email({
-      email: form.email.trim(),
+      email,
       password: form.password,
-      callbackURL,
+      callbackURL: nextUrl,
     });
 
     setLoading(false);
@@ -213,8 +230,11 @@ export function SignInClient({ brand }: SignInClientProps) {
       return;
     }
 
+    // ✅ Password + account OK
     resetLimiterOnSuccess();
-    router.replace(callbackURL);
+
+    // If the auth client does NOT auto-redirect, force navigation:
+    router.replace(nextUrl);
   }
 
   /* ------------------------------------------------------------------------ */

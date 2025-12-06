@@ -651,7 +651,7 @@ async function main() {
   // EXACTLY ONE central superadmin user
   const centralUser = await ensureUser({
     name: "Central Superadmin",
-    email: "central.admin@hive.test",
+    email: "jollyaemero2223@gmail.com",
     password: DEFAULT_PASSWORD,
   });
 

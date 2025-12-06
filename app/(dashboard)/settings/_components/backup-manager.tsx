@@ -17,6 +17,7 @@ import {
   Download,
   FileText,
   HardDrive,
+  Mail,
   Save,
   ShieldAlert,
   Trash2
@@ -59,13 +60,14 @@ export function BackupManager() {
       enabled: false, 
       frequency: 'DAILY', 
       time: '00:00',
-      retention: 7 
+      retention: 7,
+      notificationEmail: '' // ✅ Initialize this
   });
   
   const [history, setHistory] = useState<BackupRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // ✅ STATE FOR DELETE DIALOGS
+  // STATE FOR DELETE DIALOGS
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [bulkDeleteRows, setBulkDeleteRows] = useState<BackupRecord[] | null>(null);
 
@@ -107,7 +109,7 @@ export function BackupManager() {
     });
   };
 
-  // ✅ 1. Single Delete Confirmation Logic
+  // 1. Single Delete Confirmation Logic
   const executeDelete = async () => {
     if (!deleteId) return;
     
@@ -119,7 +121,7 @@ export function BackupManager() {
     });
   }
 
-  // ✅ 2. Bulk Delete Confirmation Logic
+  // 2. Bulk Delete Confirmation Logic
   const executeBulkDelete = async () => {
       if (!bulkDeleteRows) return;
       
@@ -216,7 +218,6 @@ export function BackupManager() {
 
   return (
     <div className="space-y-6">
-      {/* ... SCHEDULE & MANUAL CARDS (Keep exactly as before) ... */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -225,6 +226,8 @@ export function BackupManager() {
           <CardDescription>Configure automation and data retention policies.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          
+          {/* ENABLE SWITCH */}
           <div className="flex items-center justify-between rounded-lg border p-4 bg-muted/20">
              <div className="space-y-0.5">
                 <Label>Enable Automatic Backups</Label>
@@ -235,6 +238,8 @@ export function BackupManager() {
                 onCheckedChange={(v) => setSettings({...settings, enabled: v})} 
              />
           </div>
+
+          {/* SETTINGS GRID */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
              <div className="space-y-2">
                 <Label>Backup Time</Label>
@@ -286,6 +291,26 @@ export function BackupManager() {
                 </p>
              </div>
           </div>
+
+          {/* ✅ NEW: NOTIFICATION EMAIL INPUT */}
+          <div className="space-y-2">
+             <Label>Notification Email</Label>
+             <div className="relative">
+                 <Mail className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                 <Input 
+                    type="email" 
+                    placeholder="admin@example.com"
+                    className="pl-9"
+                    value={settings.notificationEmail || ''} 
+                    onChange={(e) => setSettings({...settings, notificationEmail: e.target.value})}
+                    disabled={!settings.enabled}
+                 />
+             </div>
+             <p className="text-[10px] text-muted-foreground">
+                Automatic success/failure reports will be sent to this address.
+             </p>
+          </div>
+
         </CardContent>
         <CardFooter className="justify-between border-t px-6 py-4 bg-muted/10">
            <div className="text-xs text-muted-foreground flex items-center gap-1">
@@ -298,6 +323,7 @@ export function BackupManager() {
         </CardFooter>
       </Card>
 
+      {/* MANUAL ACTIONS CARD  */}
       <Card>
          <CardHeader>
              <CardTitle className="flex items-center gap-2">
@@ -321,7 +347,7 @@ export function BackupManager() {
          </CardContent>
       </Card>
 
-      {/* 3. HISTORY TABLE */}
+      {/* HISTORY TABLE */}
       <DataTable 
         columns={columns} 
         data={history} 
@@ -329,10 +355,10 @@ export function BackupManager() {
         description="View, download, or delete recent system backups."
         searchColumnId="type"
         searchPlaceholder="Search by type..."
-        onDeleteRows={(rows) => setBulkDeleteRows(rows)} // ✅ Trigger Bulk Dialog
+        onDeleteRows={(rows) => setBulkDeleteRows(rows)} 
       />
 
-      {/* ✅ SINGLE DELETE ALERT */}
+      {/* DELETE DIALOGS (Single & Bulk) */}
       <AlertDialog open={!!deleteId} onOpenChange={(open) => !open && setDeleteId(null)}>
         <AlertDialogContent>
             <AlertDialogHeader>
@@ -350,7 +376,6 @@ export function BackupManager() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* ✅ BULK DELETE ALERT */}
       <AlertDialog open={!!bulkDeleteRows} onOpenChange={(open) => !open && setBulkDeleteRows(null)}>
         <AlertDialogContent>
             <AlertDialogHeader>

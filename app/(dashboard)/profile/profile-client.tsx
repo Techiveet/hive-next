@@ -37,13 +37,22 @@ import {
   updateProfileAction,
   verifyPasswordAction,
 } from "./_actions";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation"; // Added useSearchParams for tab persistence
 import { useState, useTransition } from "react";
 
+import { Breadcrumb } from "@/components/breadcrumb";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+
+// 1. ADD IMPORT HERE
+
+
+
+
+
+
 
 type UserProfile = {
   id: string;
@@ -57,31 +66,19 @@ type UserProfile = {
 type QrData = { secret: string; qrCodeUrl: string };
 
 type PasswordModalMode = "ENABLE" | "DISABLE" | "REGEN" | "SHOW_QR" | null;
-type TabValue = "general" | "password" | "security";
 
 export default function ProfileClient({ user }: { user: UserProfile }) {
   const [isPending, startTransition] = useTransition();
-
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  // ======== TAB PERSISTENCE =========
-  const initialTab = (searchParams.get("tab") as TabValue | null) ?? "general";
-  const [tab, setTab] = useState<TabValue>(initialTab);
+  // --- TAB PERSISTENCE LOGIC ---
+  const currentTab = searchParams.get("tab") ?? "general";
 
-  const handleTabChange = (value: string) => {
-    const next = (value as TabValue) || "general";
-    setTab(next);
-
+  const handleTabChange = (val: string) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (next === "general") {
-      // Optional: keep URL clean by removing tab when default
-      params.delete("tab");
-    } else {
-      params.set("tab", next);
-    }
-
-    router.replace(`/profile?${params.toString()}`, { scroll: false });
+    params.set("tab", val);
+    router.replace(`?${params.toString()}`, { scroll: false });
   };
 
   // --- GENERAL STATE ---
@@ -110,7 +107,6 @@ export default function ProfileClient({ user }: { user: UserProfile }) {
 
   // ========= GENERAL HANDLERS =========
 
-  // Use File Manager like in the Users modal
   const handlePickAvatar = () => {
     if (typeof window === "undefined") return;
 
@@ -236,30 +232,28 @@ export default function ProfileClient({ user }: { user: UserProfile }) {
 
   return (
     <div className="max-w-4xl mx-auto py-8 space-y-8">
+      
+      {/* 2. ADD BREADCRUMB HERE */}
+      <div className="space-y-2">
+         <Breadcrumb />
+      </div>
+
       {/* HEADER */}
       <div className="flex items-center gap-4">
         <Avatar className="h-16 w-16 border-2 border-white shadow-md">
-          {avatarPreview ? (
-            <AvatarImage src={avatarPreview} className="object-cover" />
-          ) : null}
+          <AvatarImage src={avatarPreview || undefined} className="object-cover" />
           <AvatarFallback className="text-lg font-bold bg-indigo-100 text-indigo-700">
             {user.name?.substring(0, 2).toUpperCase() || "US"}
           </AvatarFallback>
         </Avatar>
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">
-            {user.name ?? user.email}
-          </h2>
+          <h2 className="text-2xl font-bold tracking-tight">{user.name}</h2>
           <p className="text-muted-foreground">{user.email}</p>
         </div>
       </div>
 
       {/* TABS */}
-      <Tabs
-        value={tab}
-        onValueChange={handleTabChange}
-        className="w-full"
-      >
+      <Tabs value={currentTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="password">Password</TabsTrigger>
@@ -279,9 +273,7 @@ export default function ProfileClient({ user }: { user: UserProfile }) {
               {/* Avatar + Change button */}
               <div className="flex items-center gap-6">
                 <Avatar className="h-20 w-20">
-                  {avatarPreview ? (
-                    <AvatarImage src={avatarPreview} />
-                  ) : null}
+                  <AvatarImage src={avatarPreview || undefined} />
                   <AvatarFallback>
                     {user.name?.substring(0, 2).toUpperCase() || "US"}
                   </AvatarFallback>
