@@ -1,3 +1,4 @@
+//app/(dashboard)/email/_components/email-read-listener.tsx
 "use client";
 
 import { markEmailAsReadAction } from "../email-actions";

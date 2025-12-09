@@ -19,17 +19,17 @@ model User {
   email         String
   emailVerified Boolean   @default(false)
 
-  sentEmails    Email[]   @relation("Sender")
+  sentEmails     Email[]          @relation("Sender")
   receivedEmails EmailRecipient[]
   
   // Custom Security Field
-  twoFactorEnabled Boolean @default(false)
+  twoFactorEnabled      Boolean @default(false)
   twoFactorSecret        String? @db.Text
   twoFactorRecoveryCodes String? @db.Text
 
   // make both large enough for long URLs / base64
-  image         String?   @db.LongText
-  avatarUrl     String?   @db.LongText
+  image     String? @db.LongText
+  avatarUrl String? @db.LongText
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -40,9 +40,13 @@ model User {
   tenantMemberships UserTenant[]
   userRoles         UserRole[]
 
+// New field to store the user's PGP public key
+  pgpPublicKey String? @db.LongText
+  encryptedPrivateKey String? @db.LongText
+
   // file manager relations
-  folders  Folder[] @relation("UserFolders")
-  files    File[]   @relation("UserFiles")
+  folders Folder[] @relation("UserFolders")
+  files   File[]   @relation("UserFiles")
 
   sessions            Session[]
   accounts            Account[]
@@ -52,44 +56,81 @@ model User {
   @@map("user")
 }
 
+// =====================
+//        EMAIL
+// =====================
+
 model Email {
-  id        String   @id @default(uuid())
-  subject   String
-  body      String   @db.Text
+  id      String @id @default(uuid())
+  subject String @db.Text
+  body    String @db.LongText 
   
-  senderId  String
-  sender    User     @relation("Sender", fields: [senderId], references: [id])
+  senderId String
+  sender   User   @relation("Sender", fields: [senderId], references: [id])
 
-  recipients EmailRecipient[]
-  
-  // ✅ ADD THIS
-  isStarred Boolean @default(false) 
+  recipients   EmailRecipient[]
+  isStarred    Boolean @default(false)
+  senderFolder String  @default("sent")
+  isE2EE       Boolean @default(false)
+  // Attachments
+  attachments EmailAttachment[]
 
-  // Tracks if sender moved it to trash/archive
-  senderFolder String @default("sent") // "sent", "archive", "trash"
-  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
+// Type of recipient (TO / CC / BCC)
+enum RecipientType {
+  TO
+  CC
+  BCC
+}
+
 model EmailRecipient {
-  id        String   @id @default(uuid())
+  id String @id @default(uuid())
   
-  emailId   String
-  email     Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  emailId String
+  email   Email  @relation(fields: [emailId], references: [id], onDelete: Cascade)
   
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
   
-  isRead    Boolean  @default(false)
-  // ✅ ADD THIS
-  isStarred Boolean  @default(false) 
-  folder    String   @default("inbox")
+  isRead    Boolean        @default(false)
+  isStarred Boolean        @default(false) 
+  folder    String         @default("inbox")
+  type      RecipientType  @default(TO)
   
   createdAt DateTime @default(now())
 
   @@unique([emailId, userId])
 }
+
+// Attachment type
+enum AttachmentType {
+  IMAGE
+  VIDEO
+  FILE
+}
+
+model EmailAttachment {
+  id      String         @id @default(cuid())
+
+  emailId String
+  email   Email          @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  fileId  String
+  file    File           @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  type    AttachmentType @default(FILE)
+
+  createdAt DateTime     @default(now())
+
+  @@index([emailId])
+}
+
+// =====================
+//        SESSION / AUTH
+// =====================
 
 model Session {
   id        String   @id
@@ -108,20 +149,20 @@ model Session {
 }
 
 model Account {
-  id                    String    @id
+  id                    String   @id
   accountId             String
   providerId            String
   userId                String
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken           String?   @db.Text
-  refreshToken          String?   @db.Text
-  idToken               String?   @db.Text
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?  @db.Text
+  refreshToken          String?  @db.Text
+  idToken               String?  @db.Text
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
-  scope                 String?   @db.Text
-  password              String?   @db.Text
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  scope                 String?  @db.Text
+  password              String?  @db.Text
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   @@unique([providerId, accountId])
   @@index([userId], map: "account_user_idx_v4")
@@ -191,15 +232,15 @@ model Tenant {
   emailSettings       EmailSettings?
   fileManagerSettings FileManagerSettings?
   
-  // ✅ ADDED: Storage Settings relation
+  // Storage Settings relation
   storageSettings     StorageSettings?
 
-  // ✅ BACKUP & LANGUAGES
+  // Backup & Languages
   backupSettings      BackupSettings?
   backups             BackupHistory[]
   languages           Language[]
   
-  // ✅ ADDED: IP Settings relation
+  // IP Settings relation
   ipSettings          IpSettings?
 }
 
@@ -315,8 +356,7 @@ model File {
   name     String
   size     Int
   mimeType String
-
-  url String @db.LongText
+  url      String @db.LongText
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -331,6 +371,9 @@ model File {
   updatedAt  DateTime  @updatedAt
   isFavorite Boolean   @default(false)
   deletedAt  DateTime?
+
+  // Back relation to email attachments
+  emailAttachments EmailAttachment[]
 
   @@index([tenantId])
 }
@@ -521,12 +564,12 @@ model SystemCron {
 // =====================
 
 model StorageSettings {
-  id        String   @id @default(cuid())
-  tenantId  String?  @unique
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   // Provider Type
-  provider  String   @default("LOCAL") // LOCAL, S3, R2, SPACES, GDRIVE
+  provider String @default("LOCAL") // LOCAL, S3, R2, SPACES, GDRIVE
 
   // S3 / R2 / Spaces Credentials
   accessKeyId     String? @db.Text
@@ -536,7 +579,7 @@ model StorageSettings {
   bucket          String? @db.Text
   
   // Google Drive (Service Account JSON)
-  gdriveJson      String? @db.Text 
+  gdriveJson String? @db.Text 
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -547,17 +590,15 @@ model StorageSettings {
 // =====================
 
 model IpSettings {
-  id        String   @id @default(cuid())
-  tenantId  String?  @unique
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  enabled   Boolean  @default(false)
-  
-  // ✅ ADDED: Strategy Field
-  strategy  String   @default("ALLOW") // "ALLOW" (Whitelist) or "BLOCK" (Blacklist)
+  enabled  Boolean @default(false)
+  strategy String  @default("ALLOW") // "ALLOW" (Whitelist) or "BLOCK" (Blacklist)
   
   // Structure: [{ ip: "1.2.3.4", label: "Office VPN" }, ...]
-  allowList Json     @default("[]") 
+  allowList Json @default("[]") 
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

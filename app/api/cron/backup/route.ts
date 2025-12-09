@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
 
     if (targets.length === 0) {
       console.log("[Cron] No backups due.");
-      return { success: true, message: "No backups due." };
+      return { success: true, message: "No backups due." }; // ✅ FIX 1: Ensure message is always present
     }
 
     const results: any[] = [];
@@ -92,9 +92,7 @@ export async function GET(req: NextRequest) {
       }
 
       // distinguish forced vs scheduled
-      const backupType = forceMode
-        ? "AUTOMATIC_FORCED"
-        : "AUTOMATIC_SCHEDULED";
+      const backupType = forceMode ? "AUTOMATIC_FORCED" : "AUTOMATIC_SCHEDULED";
 
       try {
         // 3) Only dedupe within 1 minute for scheduled runs
@@ -159,7 +157,11 @@ export async function GET(req: NextRequest) {
           });
         }
 
-        results.push({ tenantId, status: "Success" });
+        results.push({
+          tenantId,
+          status: "Success",
+          message: "Backup completed successfully.",
+        });
       } catch (e: any) {
         console.error(`[Cron] Error for ${tenantId ?? "CENTRAL"}:`, e);
 
@@ -186,11 +188,18 @@ export async function GET(req: NextRequest) {
           tenantId: setting.tenantId,
           status: "Failed",
           error: e.message,
+          message: `Backup failed: ${e.message}`, // Ensure failure result also has a message
         });
       }
     }
 
     revalidatePath("/settings");
-    return { success: true, ran: results.length, details: results };
+    // ✅ FIX 2: Ensure the final return object has a message property.
+    return {
+      success: true,
+      ran: results.length,
+      details: results,
+      message: `Backup cron job executed for ${results.length} target(s).`,
+    };
   });
 }

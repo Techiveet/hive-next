@@ -13,9 +13,6 @@ import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 
-// ✅ Import Types
-
-
 // 1. Define Default Dictionary
 const DEFAULT_DICTIONARY = {
   "dashboard.title": "Dashboard",
@@ -82,39 +79,48 @@ export default async function DashboardLayout({
   }
 
   // ✅ Parallel fetch: Permissions, Brand, Settings, Languages AND EMAILS
-  const [permissions, brand, appSettings, languages, unreadEmails, unreadCount] = await Promise.all([
+  // We use non-null assertion (!) where tenantId is required by Prisma but inferred as null
+  // by TypeScript (e.g., in the 'where' clause for findUnique/findMany).
+  const [
+    permissions,
+    brand,
+    appSettings,
+    languages,
+    unreadEmails,
+    unreadCount,
+  ] = await Promise.all([
     getCurrentUserPermissions(tenantId),
     prisma.brandSettings.findFirst({
-      where: { tenantId },
+      where: { tenantId: tenantId! }, // ⬅️ FIX: Non-null assertion
     }),
     prisma.appSettings.findUnique({
-      where: { tenantId },
+      where: { tenantId: tenantId! }, // ⬅️ FIX: Non-null assertion (Line 91)
     }),
     prisma.language.findMany({
-      where: { tenantId },
+      where: { tenantId: tenantId! }, // ⬅️ FIX: Non-null assertion (Line 94)
       select: { code: true, name: true, translations: true },
     }),
     // 📧 Fetch 5 latest unread emails for the dropdown
     prisma.emailRecipient.findMany({
-        where: { userId: user.id, isRead: false, folder: "inbox" },
-        take: 5,
-        orderBy: { createdAt: "desc" },
-        select: {
+      where: { userId: user.id, isRead: false, folder: "inbox" },
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        createdAt: true,
+        email: {
+          select: {
             id: true,
-            createdAt: true,
-            email: {
-                select: {
-                    id: true,
-                    subject: true,
-                    sender: { select: { name: true, email: true } }
-                }
-            }
-        }
+            subject: true,
+            sender: { select: { name: true, email: true } },
+          },
+        },
+      },
     }),
     // 📧 Fetch total unread count
     prisma.emailRecipient.count({
-        where: { userId: user.id, isRead: false, folder: "inbox" }
-    })
+      where: { userId: user.id, isRead: false, folder: "inbox" },
+    }),
   ]);
 
   let finalBrand = brand;
@@ -189,7 +195,7 @@ export default async function DashboardLayout({
           // ✅ PASS EMAIL DATA
           emailData={{
             count: unreadCount,
-            items: unreadEmails as UnreadEmailData[]
+            items: unreadEmails as UnreadEmailData[],
           }}
         >
           {children}

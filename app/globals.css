@@ -1,3 +1,6 @@
+@import '../styles/_variables.scss';
+@import '../styles/_keyframe-animations.scss';
+
 @import "tailwindcss";
 @import "tw-animate-css";
 
@@ -119,4 +122,237 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+/* TipTap / ProseMirror default typography */
+@layer base {
+  .ProseMirror {
+    @apply leading-[1.5];
+  }
+
+  .ProseMirror h1,
+  .ProseMirror h2,
+  .ProseMirror h3,
+  .ProseMirror h4,
+  .ProseMirror h5,
+  .ProseMirror h6 {
+    @apply leading-tight mt-10 text-balance;
+  }
+
+  .ProseMirror h1,
+  .ProseMirror h2 {
+    @apply mt-14 mb-6;
+  }
+
+  .ProseMirror h1 {
+    @apply text-[1.4rem] font-bold;
+  }
+
+  .ProseMirror h2 {
+    @apply text-[1.2rem] font-bold;
+  }
+
+  .ProseMirror h3 {
+    @apply text-[1.1rem] font-semibold;
+  }
+
+  .ProseMirror h4,
+  .ProseMirror h5,
+  .ProseMirror h6 {
+    @apply text-[1rem] font-medium;
+  }
+}
+
+.ProseMirror h1 { font-size: 1.4rem; font-weight: 700; }
+.ProseMirror h2 { font-size: 1.2rem; font-weight: 700; }
+.ProseMirror h3 { font-size: 1.1rem; font-weight: 600; }
+.tiptap h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+.tiptap h2 {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+.tiptap h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+/* Make headings inside the editor not add big gaps */
+.tiptap h1,
+.tiptap h2,
+.tiptap h3,
+.tiptap h4,
+.tiptap h5,
+.tiptap h6 {
+  margin-top: 0.25rem;   /* small top margin */
+  margin-bottom: 0.25rem;
+  line-height: 1.25;
+}
+
+/* Optional: first heading in the document – no extra top margin at all */
+.tiptap > h1:first-child,
+.tiptap > h2:first-child,
+.tiptap > h3:first-child,
+.tiptap > h4:first-child,
+.tiptap > h5:first-child,
+.tiptap > h6:first-child {
+  margin-top: 0;
+}
+.tiptap ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+}
+
+.tiptap ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+}
+.tiptap blockquote {
+  border-left: 3px solid #e2e8f0;
+  margin: 1.5rem 0;
+  padding-left: 1rem;
+  color: #64748b;
+  font-style: italic;
+}
+
+.tiptap pre {
+  background: #020617;
+  border-radius: 0.5rem;
+  color: #f9fafb;
+  font-family: "JetBrainsMono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+    Consolas, "Liberation Mono", "Courier New", monospace;
+  margin: 1.5rem 0;
+  padding: 0.75rem 1rem;
+}
+
+.tiptap pre code {
+  background: none;
+  color: inherit;
+  font-size: 0.8rem;
+  padding: 0;
+}
+
+.tiptap code {
+  background-color: hsl(var(--muted));
+  color: hsl(var(--foreground));
+  border-radius: 0.25rem;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.85em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+}
+
+.tiptap pre.tt-code-block {
+  background: #020617; /* slate-950 */
+  color: #e5e7eb;      /* slate-200 */
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-size: 0.8rem;
+  overflow-x: auto;
+}
+/* globals.css or styles.scss */
+
+/* Basic editor + detail styles */
+.tiptap {
+  :first-child {
+    margin-top: 0;
+  }
+
+  pre {
+    background: hsl(var(--muted));
+    border-radius: 0.5rem;
+    color: hsl(var(--muted-foreground));
+    font-family: "JetBrainsMono", ui-monospace, SFMono-Regular, Menlo, Monaco,
+      Consolas, "Liberation Mono", "Courier New", monospace;
+    margin: 1.5rem 0;
+    padding: 0.75rem 1rem;
+    overflow-x: auto;
+
+    code {
+      background: none;
+      color: inherit;
+      font-size: 0.8rem;
+      padding: 0;
+    }
+
+    /* Lowlight / highlight.js colors */
+    .hljs-comment,
+    .hljs-quote {
+      color: #616161;
+    }
+
+    .hljs-variable,
+    .hljs-template-variable,
+    .hljs-attribute,
+    .hljs-tag,
+    .hljs-regexp,
+    .hljs-link,
+    .hljs-name,
+    .hljs-selector-id,
+    .hljs-selector-class {
+      color: #f98181;
+    }
+
+    .hljs-number,
+    .hljs-meta,
+    .hljs-built_in,
+    .hljs-builtin-name,
+    .hljs-literal,
+    .hljs-type,
+    .hljs-params {
+      color: #fbbc88;
+    }
+
+    .hljs-string,
+    .hljs-symbol,
+    .hljs-bullet {
+      color: #b9f18d;
+    }
+
+    .hljs-title,
+    .hljs-section {
+      color: #faf594;
+    }
+
+    .hljs-keyword,
+    .hljs-selector-tag {
+      color: #70cff8;
+    }
+
+    .hljs-emphasis {
+      font-style: italic;
+    }
+
+    .hljs-strong {
+      font-weight: 700;
+    }
+  }
+}
+
+/* Optional: extra contrast for dark theme */
+.dark .tiptap pre {
+  background: #020617; /* slate-950 */
+  color: #e5e7eb;      /* slate-200 */
+}
+
+.tiptap img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.5rem 0;
+  border-radius: 0.5rem;
+}
+/* Email body images */
+.tiptap img {
+  max-width: 100%;
+  max-height: 240px;
+  border-radius: 0.75rem;
+  object-fit: cover;
+  display: block;
+  margin: 0.75rem 0;
+  cursor: zoom-in;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.15);
 }

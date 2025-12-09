@@ -1,3 +1,4 @@
+//app/components/email-menu.tsx
 "use client";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";

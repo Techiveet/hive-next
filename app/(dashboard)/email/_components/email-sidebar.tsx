@@ -1,3 +1,4 @@
+//app/(dashboard)/email/_components/email-sidebar.tsx
 "use client";
 
 import {
