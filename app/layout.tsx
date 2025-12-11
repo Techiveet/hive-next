@@ -5,6 +5,8 @@ import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
 import { getBrandForRequest } from "@/lib/brand-server";
+// Import the backup scheduler
+import { startBackupScheduler } from "@/lib/backup-scheduler";
 
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await getBrandForRequest();
@@ -25,6 +27,12 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+// Initialize backup scheduler on server startup
+if (process.env.NODE_ENV === "production") {
+  // Start the scheduler
+  startBackupScheduler();
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -32,7 +40,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="min-h-screen bg-background t`ext-foreground antialiased">
+      <body className="min-h-screen bg-background text-foreground antialiased">
         <ThemeProvider>
           {children}
 

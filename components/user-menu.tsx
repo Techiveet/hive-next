@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, User2 } from "lucide-react";
+import { LogOut, Mail, User2 } from "lucide-react"; // Import Mail icon
 
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
@@ -53,6 +53,12 @@ export function UserMenu({ user }: UserMenuProps) {
   const handleGoProfile = () => {
     router.push("/profile?tab=general");
   };
+
+   // --- NEW HANDLER ---
+  const handleGoEmail = () => {
+    router.push("/email?folder=inbox"); // Assuming /email is the entry point
+  };
+
 
   return (
     <DropdownMenu>
@@ -106,6 +112,16 @@ export function UserMenu({ user }: UserMenuProps) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-slate-800" />
+
+         
+
+ <DropdownMenuItem
+          className="text-xs cursor-pointer"
+          onClick={handleGoEmail}
+        >
+          <Mail className="mr-2 h-3.5 w-3.5" />
+           Email Inbox
+        </DropdownMenuItem>
         <DropdownMenuItem
           className="text-xs cursor-pointer"
           onClick={handleGoProfile}

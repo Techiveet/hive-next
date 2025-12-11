@@ -25,3 +25,4 @@ export function EmailReadListener({
 
   return null; // Renders nothing visibly
 }
+

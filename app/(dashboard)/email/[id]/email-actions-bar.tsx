@@ -1,4 +1,4 @@
-//app/(dashboard)/email/[id]/email-action.tsx
+//app/(dashboard)/email/[id]/email-actions-bar.tsx
 "use client";
 
 import { ArrowLeft, CornerUpLeft, Forward, Trash2 } from "lucide-react";

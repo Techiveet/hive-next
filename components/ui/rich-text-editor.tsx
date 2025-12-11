@@ -1,3 +1,4 @@
+//app/components/ui/rich-text-editor.tsx
 "use client";
 
 import "tippy.js/dist/tippy.css";

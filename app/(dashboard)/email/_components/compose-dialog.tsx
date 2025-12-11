@@ -26,11 +26,6 @@ import { toast } from "sonner";
 // UPDATED IMPORT
 
 
-
-
-
-// ... (RecipientInput component remains the same) ...
-
 function RecipientInput({
   label,
   users,
@@ -82,7 +77,8 @@ function RecipientInput({
               e.target.value = "";
             }}
           >
-            <option value="" className="dark:text-slate-800">
+            {/* FIX: Added key to the static option element */}
+            <option key="add-recipient-placeholder" value="" className="dark:text-slate-800">
               + Add recipient
             </option>
             {availableUsers.map((u: any) => (

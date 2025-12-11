@@ -1,3 +1,5 @@
+//app/(dashboard)/.layout.tsx
+
 import { AppConfigProvider } from "@/components/providers/app-config-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { FileManagerEventListener } from "@/components/file-manager/file-manager-event-listener";
@@ -57,6 +59,53 @@ async function resolveTenantIdFromHost(): Promise<string | null> {
   return tenantId;
 }
 
+// Optimized function to fetch minimal email data for menu
+async function getUnreadEmailData(userId: string) {
+  try {
+    const [unreadEmails, unreadCount] = await Promise.all([
+      // Fetch only what's needed for menu display
+      prisma.emailRecipient.findMany({
+        where: { 
+          userId, 
+          isRead: false, 
+          folder: "inbox" 
+        },
+        take: 3, // Reduced from 5 to 3 for performance
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          createdAt: true,
+          email: {
+            select: {
+              id: true,
+              subject: true,
+              sender: { 
+                select: { 
+                  name: true, 
+                  email: true 
+                } 
+              },
+            },
+          },
+        },
+      }),
+      // Use count for total
+      prisma.emailRecipient.count({
+        where: { 
+          userId, 
+          isRead: false, 
+          folder: "inbox" 
+        },
+      }),
+    ]);
+
+    return { unreadEmails, unreadCount };
+  } catch (error) {
+    console.error("Error fetching unread emails:", error);
+    return { unreadEmails: [], unreadCount: 0 };
+  }
+}
+
 export default async function DashboardLayout({
   children,
 }: {
@@ -78,54 +127,46 @@ export default async function DashboardLayout({
     redirect("/ip-restricted");
   }
 
-  // ✅ Parallel fetch: Permissions, Brand, Settings, Languages AND EMAILS
-  // We use non-null assertion (!) where tenantId is required by Prisma but inferred as null
-  // by TypeScript (e.g., in the 'where' clause for findUnique/findMany).
+  // ✅ Parallel fetch with optimizations
   const [
     permissions,
     brand,
     appSettings,
     languages,
-    unreadEmails,
-    unreadCount,
+    emailData,
   ] = await Promise.all([
     getCurrentUserPermissions(tenantId),
-    prisma.brandSettings.findFirst({
-      where: { tenantId: tenantId! }, // ⬅️ FIX: Non-null assertion
-    }),
-    prisma.appSettings.findUnique({
-      where: { tenantId: tenantId! }, // ⬅️ FIX: Non-null assertion (Line 91)
-    }),
-    prisma.language.findMany({
-      where: { tenantId: tenantId! }, // ⬅️ FIX: Non-null assertion (Line 94)
+    // Use findUnique with proper tenantId check
+    tenantId ? prisma.brandSettings.findFirst({
+      where: { tenantId },
+    }) : Promise.resolve(null),
+    // App settings with tenantId check
+    tenantId ? prisma.appSettings.findUnique({
+      where: { tenantId },
+    }) : Promise.resolve(null),
+    // Languages with tenantId check
+    tenantId ? prisma.language.findMany({
+      where: { tenantId },
       select: { code: true, name: true, translations: true },
-    }),
-    // 📧 Fetch 5 latest unread emails for the dropdown
-    prisma.emailRecipient.findMany({
-      where: { userId: user.id, isRead: false, folder: "inbox" },
-      take: 5,
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        createdAt: true,
-        email: {
-          select: {
-            id: true,
-            subject: true,
-            sender: { select: { name: true, email: true } },
-          },
-        },
-      },
-    }),
-    // 📧 Fetch total unread count
-    prisma.emailRecipient.count({
-      where: { userId: user.id, isRead: false, folder: "inbox" },
-    }),
+    }) : Promise.resolve([]),
+    // Email data (parallel but separate from tenant queries)
+    getUnreadEmailData(user.id),
   ]);
 
+  // Fallback to global/default brand
   let finalBrand = brand;
-  if (!finalBrand) {
+  if (!finalBrand && tenantId !== null) {
+    // Only try to get global brand if we have a tenant ID
     finalBrand = await prisma.brandSettings.findFirst({
+      where: { tenantId: null },
+    });
+  }
+
+  // Fallback to global/default app settings
+  let finalAppSettings = appSettings;
+  if (!finalAppSettings && tenantId !== null) {
+    // Only try to get global settings if we have a tenant ID
+    finalAppSettings = await prisma.appSettings.findFirst({
       where: { tenantId: null },
     });
   }
@@ -140,10 +181,12 @@ export default async function DashboardLayout({
   }
 
   // 2. Determine Active Language
-  const activeLocale = appSettings?.locale ?? "en";
-  const activeLanguageRecord = languages.find(
-    (lang) => lang.code === activeLocale
-  );
+  const activeLocale = finalAppSettings?.locale ?? "en";
+  
+  // Only filter languages if we have tenant-specific languages
+  const activeLanguageRecord = languages.length > 0 
+    ? languages.find((lang) => lang.code === activeLocale)
+    : null;
 
   const finalDictionary = activeLanguageRecord?.translations
     ? {
@@ -153,16 +196,16 @@ export default async function DashboardLayout({
     : DEFAULT_DICTIONARY;
 
   const config = {
-    timezone: appSettings?.timezone ?? "UTC",
+    timezone: finalAppSettings?.timezone ?? "UTC",
     locale: activeLocale,
-    dateFormat: appSettings?.dateFormat ?? "yyyy-MM-dd",
-    timeFormat: appSettings?.timeFormat ?? "HH:mm",
-    weekStartsOn: appSettings?.weekStartsOn ?? 1,
+    dateFormat: finalAppSettings?.dateFormat ?? "yyyy-MM-dd",
+    timeFormat: finalAppSettings?.timeFormat ?? "HH:mm",
+    weekStartsOn: finalAppSettings?.weekStartsOn ?? 1,
     sessionTimeout:
-      appSettings?.sessionTimeout && appSettings.sessionTimeout > 0
-        ? appSettings.sessionTimeout
+      finalAppSettings?.sessionTimeout && finalAppSettings.sessionTimeout > 0
+        ? finalAppSettings.sessionTimeout
         : 30,
-    enforceTwoFactor: appSettings?.enforceTwoFactor ?? false,
+    enforceTwoFactor: finalAppSettings?.enforceTwoFactor ?? false,
     dictionary: finalDictionary as Record<string, string>,
   };
 
@@ -192,10 +235,10 @@ export default async function DashboardLayout({
             logoDarkUrl: finalBrand?.logoDarkUrl ?? null,
             sidebarIconUrl: finalBrand?.sidebarIconUrl ?? null,
           }}
-          // ✅ PASS EMAIL DATA
+          // ✅ PASS OPTIMIZED EMAIL DATA
           emailData={{
-            count: unreadCount,
-            items: unreadEmails as UnreadEmailData[],
+            count: emailData.unreadCount,
+            items: emailData.unreadEmails as UnreadEmailData[],
           }}
         >
           {children}

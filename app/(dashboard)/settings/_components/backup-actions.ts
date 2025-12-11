@@ -40,6 +40,7 @@ export async function getBackupSettingsAction() {
  * 2. Save Settings
  *    – uses the email from the UI (settings.notificationEmail)
  */
+// In backup-actions.ts, update saveBackupSettingsAction
 export async function saveBackupSettingsAction(settings: any) {
   const { tenant } = await getTenantAndUser();
 
@@ -60,6 +61,9 @@ export async function saveBackupSettingsAction(settings: any) {
     tenantId,
   };
 
+  const wasEnabled = existing?.enabled || false;
+  const isNowEnabled = dataToSave.enabled;
+
   if (existing) {
     await prisma.backupSettings.update({
       where: { id: existing.id },
@@ -71,9 +75,25 @@ export async function saveBackupSettingsAction(settings: any) {
     });
   }
 
+  // ✅ NEW: Send notification when enabling backups
+  if (!wasEnabled && isNowEnabled && dataToSave.notificationEmail) {
+    try {
+      await sendBackupNotification({
+        tenantId,
+        filename: "System Setup",
+        size: BigInt(0),
+        type: "SCHEDULED_SETUP",
+        status: "SUCCESS",
+        error: `Automatic backups have been enabled. Next backup scheduled for ${settings.time || "00:00"} daily.`,
+        recipientEmail: dataToSave.notificationEmail,
+      });
+    } catch (e) {
+      console.warn("Failed to send backup setup notification:", e);
+    }
+  }
+
   revalidatePath("/settings");
 }
-
 /**
  * 3. Manual Backup
  */
@@ -236,4 +256,22 @@ export async function deleteManyBackupsAction(ids: string[]) {
   }
 
   revalidatePath("/settings");
+}
+
+// Add this function to your existing backup-actions.ts
+export async function triggerScheduledBackupAction() {
+  const { tenant } = await getTenantAndUser();
+  
+  if (tenant && tenant.slug !== "central-hive") {
+    throw new Error("Unauthorized - Only central admin can trigger scheduled backups");
+  }
+  
+  try {
+    // Import the scheduler function
+    const { triggerBackupNow } = await import("@/lib/backup-scheduler");
+    await triggerBackupNow();
+    return { success: true, message: "Scheduled backups triggered successfully" };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
 }

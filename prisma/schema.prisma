@@ -1,605 +1,697 @@
-// prisma/schema.prisma
-
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 // =====================
-//        USER / AUTH
+//        USER / AUTH
 // =====================
 
 model User {
-  id            String    @id
-  name          String    @db.Text
-  email         String
-  emailVerified Boolean   @default(false)
+  id            String    @id
+  name          String    @db.Text
+  email         String
+  emailVerified Boolean   @default(false)
 
-  sentEmails     Email[]          @relation("Sender")
-  receivedEmails EmailRecipient[]
-  
-  // Custom Security Field
-  twoFactorEnabled      Boolean @default(false)
-  twoFactorSecret        String? @db.Text
-  twoFactorRecoveryCodes String? @db.Text
+  sentEmails     Email[]          @relation("Sender")
+  receivedEmails EmailRecipient[]
+  
+  // Custom Security Field
+  twoFactorEnabled      Boolean @default(false)
+  twoFactorSecret        String? @db.Text
+  twoFactorRecoveryCodes String? @db.Text
 
-  // make both large enough for long URLs / base64
-  image     String? @db.LongText
-  avatarUrl String? @db.LongText
+  // make both large enough for long URLs / base64
+  image     String? @db.LongText
+  avatarUrl String? @db.LongText
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  isActive Boolean @default(true)
+  isActive Boolean @default(true)
 
-  // multi-tenant & rbac relations
-  tenantMemberships UserTenant[]
-  userRoles         UserRole[]
+  // multi-tenant & rbac relations
+  tenantMemberships UserTenant[]
+  userRoles         UserRole[]
 
-// New field to store the user's PGP public key
-  pgpPublicKey String? @db.LongText
-  encryptedPrivateKey String? @db.LongText
+  // New field to store the user's PGP public key
+  pgpPublicKey String? @db.LongText
+  encryptedPrivateKey String? @db.LongText
 
-  // file manager relations
-  folders Folder[] @relation("UserFolders")
-  files   File[]   @relation("UserFiles")
+  // file manager relations
+  folders Folder[] @relation("UserFolders")
+  files   File[]   @relation("UserFiles")
 
-  sessions            Session[]
-  accounts            Account[]
-  passwordSetupTokens PasswordSetupToken[]
+  // FIX 2: Add back relation for EmailTemplate
+  emailTemplates EmailTemplate[]
 
-  @@unique([email])
-  @@map("user")
+  sessions            Session[]
+  accounts            Account[]
+  passwordSetupTokens PasswordSetupToken[]
+
+  @@unique([email])
+  @@index([email(length: 191)]) // For faster email lookups
+  @@index([createdAt])
+  @@map("user")
 }
 
 // =====================
-//        EMAIL
+//        EMAIL (WITH INDEXES)
 // =====================
 
 model Email {
-  id      String @id @default(uuid())
-  subject String @db.Text
-  body    String @db.LongText 
-  
-  senderId String
-  sender   User   @relation("Sender", fields: [senderId], references: [id])
+  id      String @id @default(uuid())
+  subject String @db.Text
+  body    String @db.LongText 
+  
+  senderId String
+  sender   User   @relation("Sender", fields: [senderId], references: [id])
 
-  recipients   EmailRecipient[]
-  isStarred    Boolean @default(false)
-  senderFolder String  @default("sent")
-  isE2EE       Boolean @default(false)
-  // Attachments
-  attachments EmailAttachment[]
+  recipients   EmailRecipient[]
+  isStarred    Boolean @default(false)
+  senderFolder String  @default("sent")
+  isE2EE       Boolean @default(false)
+  // Attachments
+  attachments EmailAttachment[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ⚡ CRITICAL INDEXES FOR PERFORMANCE
+  @@index([senderId, senderFolder, createdAt(desc)])
+  @@index([createdAt(desc)])
+  @@index([isE2EE])
+}
+
+model EmailTemplate {
+  id            String   @id @default(cuid())
+  name          String
+  subject       String
+  body          String
+  // FIX 1: Changed String[] to Json because MySQL does not support primitive lists
+  variables     Json     @default("[]") // JSON array of variable names like ["{name}", "{company}"]
+  userId        String
+  tenantId      String?
+  isPublic      Boolean  @default(false)
+  category      String?  // e.g., "welcome", "followup", "invoice"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // FIX 2 & 3: These relations now have their corresponding back-relations in User and Tenant models
+  user          User     @relation(fields: [userId], references: [id])
+  tenant        Tenant?  @relation(fields: [tenantId], references: [id])
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([category])
 }
 
 // Type of recipient (TO / CC / BCC)
 enum RecipientType {
-  TO
-  CC
-  BCC
+  TO
+  CC
+  BCC
 }
 
 model EmailRecipient {
-  id String @id @default(uuid())
-  
-  emailId String
-  email   Email  @relation(fields: [emailId], references: [id], onDelete: Cascade)
-  
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-  
-  isRead    Boolean        @default(false)
-  isStarred Boolean        @default(false) 
-  folder    String         @default("inbox")
-  type      RecipientType  @default(TO)
-  
-  createdAt DateTime @default(now())
+  id String @id @default(uuid())
+  
+  emailId String
+  email   Email  @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+  
+  isRead    Boolean        @default(false)
+  isStarred Boolean        @default(false) 
+  folder    String         @default("inbox")
+  type      RecipientType  @default(TO)
+  
+  createdAt DateTime @default(now())
 
-  @@unique([emailId, userId])
+  @@unique([emailId, userId])
+  // ⚡ CRITICAL INDEXES FOR PERFORMANCE
+  @@index([userId, folder, isRead, createdAt(desc)])
+  @@index([userId, folder, isStarred, createdAt(desc)])
+  @@index([userId, folder, createdAt(desc)])
+  @@index([userId, isRead])
+  @@index([emailId])
+  @@index([createdAt(desc)])
 }
 
 // Attachment type
 enum AttachmentType {
-  IMAGE
-  VIDEO
-  FILE
+  IMAGE
+  VIDEO
+  FILE
 }
 
 model EmailAttachment {
-  id      String         @id @default(cuid())
+  id      String         @id @default(cuid())
 
-  emailId String
-  email   Email          @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  emailId String
+  email   Email          @relation(fields: [emailId], references: [id], onDelete: Cascade)
 
-  fileId  String
-  file    File           @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  fileId  String
+  file    File           @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
-  type    AttachmentType @default(FILE)
+  type    AttachmentType @default(FILE)
 
-  createdAt DateTime     @default(now())
+  createdAt DateTime     @default(now())
 
-  @@index([emailId])
+  @@index([emailId])
 }
 
 // =====================
-//        SESSION / AUTH
+//        SESSION / AUTH
 // =====================
 
 model Session {
-  id        String   @id
-  expiresAt DateTime
-  token     String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  ipAddress String?  @db.Text
-  userAgent String?  @db.Text
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?  @db.Text
+  userAgent String?  @db.Text
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([token])
-  @@index([userId(length: 191)], map: "session_user_idx_v4")
-  @@map("session")
+  @@unique([token])
+  @@index([userId(length: 191)], map: "session_user_idx_v4")
+  @@index([expiresAt])
+  @@map("session")
 }
 
 model Account {
-  id                    String   @id
-  accountId             String
-  providerId            String
-  userId                String
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken           String?  @db.Text
-  refreshToken          String?  @db.Text
-  idToken               String?  @db.Text
-  accessTokenExpiresAt  DateTime?
-  refreshTokenExpiresAt DateTime?
-  scope                 String?  @db.Text
-  password              String?  @db.Text
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  id                    String   @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?  @db.Text
+  refreshToken          String?  @db.Text
+  idToken               String?  @db.Text
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?  @db.Text
+  password              String?  @db.Text
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
-  @@unique([providerId, accountId])
-  @@index([userId], map: "account_user_idx_v4")
-  @@map("account")
+  @@unique([providerId, accountId])
+  @@index([userId], map: "account_user_idx_v4")
+  @@map("account")
 }
 
 model Verification {
-  id         String   @id
-  identifier String   @db.Text
-  value      String   @db.Text
-  expiresAt  DateTime
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id         String   @id
+  identifier String   @db.Text
+  value      String   @db.Text
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  @@index([identifier(length: 191)], map: "verification_identifier_idx_v4")
-  @@map("verification")
+  @@index([identifier(length: 191)], map: "verification_identifier_idx_v4")
+  @@index([expiresAt])
+  @@map("verification")
 }
 
 // one-time password setup / activation links
 model PasswordSetupToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt DateTime
-  createdAt DateTime @default(now())
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 
-  @@index([userId(length: 191)], map: "password_setup_token_user_idx_v4")
-  @@map("password_setup_token")
+  @@index([userId(length: 191)], map: "password_setup_token_user_idx_v4")
+  @@index([expiresAt])
+  @@map("password_setup_token")
 }
 
 // =====================
-//    MULTI-TENANT + RBAC
+//    MULTI-TENANT + RBAC
 // =====================
 
 enum RoleScope {
-  CENTRAL // central platform roles (tenantId = null)
-  TENANT  // tenant-scoped roles  (tenantId = specific tenant)
+  CENTRAL // central platform roles (tenantId = null)
+  TENANT  // tenant-scoped roles  (tenantId = specific tenant)
 }
 
 enum EmailProvider {
-  RESEND
-  SMTP
+  RESEND
+  SMTP
 }
 
 model Tenant {
-  id        String   @id @default(cuid())
-  name      String
-  slug      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  isActive Boolean @default(true) 
+  isActive Boolean @default(true) 
 
-  users       UserTenant[]
-  userRoles   UserRole[]
-  domains     TenantDomain[]
-  folders     Folder[]
-  files       File[]
-  roles       Role[]
-  permissions Permission[]
-
-  // one settings row per tenant
-  appSettings         AppSettings?
-  brandSettings       BrandSettings?
-  companySettings     CompanySettings?
-  emailSettings       EmailSettings?
-  fileManagerSettings FileManagerSettings?
+  users       UserTenant[]
+  userRoles   UserRole[]
+  domains     TenantDomain[]
+  folders     Folder[]
+  files       File[]
+  roles       Role[]
+  permissions Permission[]
   
-  // Storage Settings relation
-  storageSettings     StorageSettings?
+  // FIX 3: Add back relation for EmailTemplate
+  emailTemplates EmailTemplate[]
 
-  // Backup & Languages
-  backupSettings      BackupSettings?
-  backups             BackupHistory[]
-  languages           Language[]
-  
-  // IP Settings relation
-  ipSettings          IpSettings?
+  // one settings row per tenant
+  appSettings         AppSettings?
+  brandSettings       BrandSettings?
+  companySettings     CompanySettings?
+  emailSettings       EmailSettings?
+  fileManagerSettings FileManagerSettings?
+  
+  // Storage Settings relation
+  storageSettings     StorageSettings?
+
+  // Backup & Languages
+  backupSettings      BackupSettings?
+  backups             BackupHistory[]
+  languages           Language[]
+  
+  // IP Settings relation
+  ipSettings          IpSettings?
+
+  @@index([slug])
+  @@index([createdAt])
 }
 
 model TenantDomain {
-  id        String   @id @default(cuid())
-  tenantId  String   @unique
-  domain    String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        String   @id @default(cuid())
+  tenantId  String   @unique
+  domain    String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([domain])
+  @@index([tenantId])
 }
 
 model Role {
-  id    Int       @id @default(autoincrement())
-  key   String
-  name  String
-  scope RoleScope
+  id    Int       @id @default(autoincrement())
+  key   String
+  name  String
+  scope RoleScope
 
-  // global (null) or tenant-local
-  tenantId String?
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // global (null) or tenant-local
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  userRoles   UserRole[]
-  permissions RolePermission[]
+  userRoles   UserRole[]
+  permissions RolePermission[]
 
-  // key is unique PER tenant; global roles have tenantId = null
-  @@unique([tenantId, key])
+  // key is unique PER tenant; global roles have tenantId = null
+  @@unique([tenantId, key])
+  @@index([tenantId])
 }
 
 model Permission {
-  id   Int    @id @default(autoincrement())
-  key  String
-  name String
+  id   Int    @id @default(autoincrement())
+  key  String
+  name String
 
-  // global (null) or tenant-local
-  tenantId String?
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  // global (null) or tenant-local
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  roles RolePermission[]
+  roles RolePermission[]
 
-  @@unique([tenantId, key])
+  @@unique([tenantId, key])
+  @@index([tenantId])
 }
 
 model RolePermission {
-  roleId       Int
-  permissionId Int
+  roleId       Int
+  permissionId Int
 
-  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
-  @@id([roleId, permissionId])
+  @@id([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
 }
 
 model UserTenant {
-  id       String  @id @default(cuid())
-  userId   String
-  tenantId String
-  isOwner  Boolean @default(false)
+  id       String  @id @default(cuid())
+  userId   String
+  tenantId String
+  isOwner  Boolean @default(false)
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, tenantId])
+  @@unique([userId, tenantId])
+  @@index([userId])
+  @@index([tenantId])
 }
 
 model UserRole {
-  id       String  @id @default(cuid())
-  userId   String
-  roleId   Int
-  tenantId String? // null = central role
+  id       String  @id @default(cuid())
+  userId   String
+  roleId   Int
+  tenantId String? // null = central role
 
-  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role   Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  tenant Tenant? @relation(fields: [tenantId], references: [id])
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
 
-  @@unique([userId, roleId, tenantId])
+  @@unique([userId, roleId, tenantId])
+  @@index([userId])
+  @@index([roleId])
+  @@index([tenantId])
 }
 
 // =====================
-//    FILE MANAGER
+//    FILE MANAGER
 // =====================
 
 model Folder {
-  id   String @id @default(cuid())
-  name String
+  id   String @id @default(cuid())
+  name String
 
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  parentId String?
-  parent   Folder?  @relation("FolderChildren", fields: [parentId], references: [id])
-  children Folder[] @relation("FolderChildren")
+  parentId String?
+  parent   Folder?  @relation("FolderChildren", fields: [parentId], references: [id])
+  children Folder[] @relation("FolderChildren")
 
-  createdById String
-  createdBy   User   @relation("UserFolders", fields: [createdById], references: [id])
+  createdById String
+  createdBy   User   @relation("UserFolders", fields: [createdById], references: [id])
 
-  files     File[]
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  files     File[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([tenantId])
+  @@index([tenantId])
+  @@index([parentId])
+  @@index([createdById])
+  @@index([createdAt])
 }
 
 model File {
-  id       String @id @default(cuid())
-  name     String
-  size     Int
-  mimeType String
-  url      String @db.LongText
+  id       String @id @default(cuid())
+  name     String
+  size     Int
+  mimeType String
+  url      String @db.LongText
 
-  tenantId String
-  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  folderId String?
-  folder   Folder? @relation(fields: [folderId], references: [id])
+  folderId String?
+  folder   Folder? @relation(fields: [folderId], references: [id])
 
-  ownerId String
-  owner   User   @relation("UserFiles", fields: [ownerId], references: [id])
+  ownerId String
+  owner   User   @relation("UserFiles", fields: [ownerId], references: [id])
 
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  isFavorite Boolean   @default(false)
-  deletedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  isFavorite Boolean   @default(false)
+  deletedAt  DateTime?
 
-  // Back relation to email attachments
-  emailAttachments EmailAttachment[]
+  // Back relation to email attachments
+  emailAttachments EmailAttachment[]
 
-  @@index([tenantId])
+  @@index([tenantId])
+  @@index([folderId])
+  @@index([ownerId])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@index([isFavorite])
 }
 
 // =====================
-//    FILE SETTINGS
+//    FILE SETTINGS
 // =====================
 
 model FileManagerSettings {
-  id       String  @id @default(cuid())
-  tenantId String? @unique
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  maxFileSizeMb             Int     @default(50)
-  allowedExtensions         Json    @default("[]") // Store as array of strings
-  autoEmptyRecycleBinDays   Int     @default(30)
-  requireDeleteConfirmation Boolean @default(true)
-  allowPublicSharing        Boolean @default(false)
+  maxFileSizeMb             Int     @default(50)
+  allowedExtensions         Json    @default("[]") // Store as array of strings
+  autoEmptyRecycleBinDays   Int     @default(30)
+  requireDeleteConfirmation Boolean @default(true)
+  allowPublicSharing        Boolean @default(false)
+
+  @@index([tenantId])
 }
 
 // =====================
-//    APP SETTINGS
+//    APP SETTINGS
 // =====================
 
 model AppSettings {
-  id       String  @id @default(cuid())
-  tenantId String? @unique
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  timezone               String  @default("UTC")
-  locale                 String  @default("en")
-  dateFormat             String  @default("yyyy-MM-dd")
-  timeFormat             String  @default("HH:mm")
-  weekStartsOn           Int     @default(1) // 1 = Monday
-  defaultTheme           String  @default("system") // "light" | "dark" | "system"
-  allowUserThemeOverride Boolean @default(true)
-  enforceTwoFactor       Boolean @default(false)
-  sessionTimeout         Int     @default(30)
+  timezone               String  @default("UTC")
+  locale                 String  @default("en")
+  dateFormat             String  @default("yyyy-MM-dd")
+  timeFormat             String  @default("HH:mm")
+  weekStartsOn           Int     @default(1) // 1 = Monday
+  defaultTheme           String  @default("system") // "light" | "dark" | "system"
+  allowUserThemeOverride Boolean @default(true)
+  enforceTwoFactor       Boolean @default(false)
+  sessionTimeout         Int     @default(30)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model BrandSettings {
-  id       String  @id @default(cuid())
-  tenantId String? @unique
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  titleText  String @default("Hive")
-  footerText String @default("Powered by Hive")
+  titleText  String @default("Hive")
+  footerText String @default("Powered by Hive")
 
-  logoLightUrl String? @db.LongText
-  logoDarkUrl  String? @db.LongText
-  faviconUrl   String? @db.LongText
+  logoLightUrl String? @db.LongText
+  logoDarkUrl  String? @db.LongText
+  faviconUrl   String? @db.LongText
 
-  sidebarIconUrl String? @db.LongText
+  sidebarIconUrl String? @db.LongText
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model CompanySettings {
-  id       String  @id @default(cuid())
-  tenantId String? @unique
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  companyName        String
-  legalName          String?
-  email              String?
-  phone              String?
-  website            String?
-  addressLine1       String?
-  addressLine2       String?
-  city               String?
-  state              String?
-  postalCode         String?
-  country            String?
-  taxId              String?
-  registrationNumber String?
+  companyName        String
+  legalName          String?
+  email              String?
+  phone              String?
+  website            String?
+  addressLine1       String?
+  addressLine2       String?
+  city               String?
+  state              String?
+  postalCode         String?
+  country            String?
+  taxId              String?
+  registrationNumber String?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model EmailSettings {
-  id       String  @id @default(cuid())
-  tenantId String? @unique
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  provider     EmailProvider @default(RESEND)
-  fromName     String
-  fromEmail    String
-  replyToEmail String?
+  provider     EmailProvider @default(RESEND)
+  fromName     String
+  fromEmail    String
+  replyToEmail String?
 
-  // Optional SMTP config – non-secret
-  smtpHost     String?
-  smtpPort     Int?
-  smtpUser     String?
-  smtpSecurity String? // "tls" | "ssl" | "none"
+  // Optional SMTP config – non-secret
+  smtpHost     String?
+  smtpPort     Int?
+  smtpUser     String?
+  smtpSecurity String? // "tls" | "ssl" | "none"
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 // =====================
-//    LOCALIZATION
+//    LOCALIZATION
 // =====================
 
 model Language {
-  id       String  @id @default(cuid())
-  tenantId String?
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  code      String // e.g., "am", "fr", "es"
-  name      String // e.g., "Amharic", "French"
-  isDefault Boolean @default(false)
-  isEnabled Boolean @default(true)
+  code      String // e.g., "am", "fr", "es"
+  name      String // e.g., "Amharic", "French"
+  isDefault Boolean @default(false)
+  isEnabled Boolean @default(true)
 
-  // Stores the actual translations
-  translations Json @default("{}")
+  // Stores the actual translations
+  translations Json @default("{}")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@unique([tenantId, code])
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([isDefault])
+  @@index([isEnabled])
 }
 
 // =====================
-//    BACKUP SYSTEM
+//    BACKUP SYSTEM
 // =====================
 
 model BackupSettings {
-  id       String  @id @default(cuid())
-  tenantId String? @unique
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  enabled   Boolean @default(false)
-  frequency String  @default("DAILY") // DAILY, WEEKLY, MONTHLY
-  time      String  @default("00:00") // 24h format
-  retention Int     @default(7)       // How many backups to keep
+  enabled   Boolean @default(false)
+  frequency String  @default("DAILY") // DAILY, WEEKLY, MONTHLY
+  time      String  @default("00:00") // 24h format
+  retention Int     @default(7)       // How many backups to keep
 
-  notificationEmail String?
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  notificationEmail String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model BackupHistory {
-  id       String  @id @default(cuid())
-  tenantId String?
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  filename String
-  path     String  @db.Text // Local path or S3 URL
-  size     BigInt  // Bytes
-  status   String  // SUCCESS, FAILED
-  type     String  // MANUAL, AUTOMATIC
+  filename String
+  path     String  @db.Text // Local path or S3 URL
+  size     BigInt  // Bytes
+  status   String  // SUCCESS, FAILED
+  type     String  // MANUAL, AUTOMATIC
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now())
 
-  @@index([tenantId])
+  @@index([tenantId])
+  @@index([createdAt])
+  @@index([status])
 }
 
 // =====================
-//    CRON JOB REGISTRY
+//    CRON JOB REGISTRY
 // =====================
 
 model SystemCron {
-  id          String   @id @default(cuid())
-  key         String   @unique // e.g. "backup-daily"
-  name        String
-  description String?
-  
-  schedule    String   // e.g. "0 0 * * *"
-  url         String   // e.g. "/api/cron/backup"
-  
-  lastRunAt   DateTime?
-  lastStatus  String?
-  lastMessage String?  @db.Text
-  
-  enabled     Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id          String   @id @default(cuid())
+  key         String   @unique // e.g. "backup-daily"
+  name        String
+  description String?
+  
+  schedule    String   // e.g. "0 0 * * *"
+  url         String   // e.g. "/api/cron/backup"
+  
+  lastRunAt   DateTime?
+  lastStatus  String?
+  lastMessage String?  @db.Text
+  
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([lastRunAt])
 }
 
 // =====================
-//    STORAGE SETTINGS
+//    STORAGE SETTINGS
 // =====================
 
 model StorageSettings {
-  id       String  @id @default(cuid())
-  tenantId String? @unique
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  // Provider Type
-  provider String @default("LOCAL") // LOCAL, S3, R2, SPACES, GDRIVE
+  // Provider Type
+  provider String @default("LOCAL") // LOCAL, S3, R2, SPACES, GDRIVE
 
-  // S3 / R2 / Spaces Credentials
-  accessKeyId     String? @db.Text
-  secretAccessKey String? @db.Text
-  endpoint        String? @db.Text // Needed for R2/Spaces (e.g., nyc3.digitaloceanspaces.com)
-  region          String? @db.Text
-  bucket          String? @db.Text
-  
-  // Google Drive (Service Account JSON)
-  gdriveJson String? @db.Text 
+  // S3 / R2 / Spaces Credentials
+  accessKeyId     String? @db.Text
+  secretAccessKey String? @db.Text
+  endpoint        String? @db.Text // Needed for R2/Spaces (e.g., nyc3.digitaloceanspaces.com)
+  region          String? @db.Text
+  bucket          String? @db.Text
+  
+  // Google Drive (Service Account JSON)
+  gdriveJson String? @db.Text 
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 // =====================
-//    IP RESTRICTION
+//    IP RESTRICTION
 // =====================
 
 model IpSettings {
-  id       String  @id @default(cuid())
-  tenantId String? @unique
-  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  enabled  Boolean @default(false)
-  strategy String  @default("ALLOW") // "ALLOW" (Whitelist) or "BLOCK" (Blacklist)
-  
-  // Structure: [{ ip: "1.2.3.4", label: "Office VPN" }, ...]
-  allowList Json @default("[]") 
+  enabled  Boolean @default(false)
+  strategy String  @default("ALLOW") // "ALLOW" (Whitelist) or "BLOCK" (Blacklist)
+  
+  // Structure: [{ ip: "1.2.3.4", label: "Office VPN" }, ...]
+  allowList Json @default("[]") 
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([enabled])
 }

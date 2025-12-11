@@ -1,3 +1,5 @@
+
+
 //app/(dashboard)/email/[id]/email-detail-toolbar.tsx
 "use client";
 
@@ -60,18 +62,21 @@ export function EmailDetailToolbar({ email, currentUserId, users, isRead, curren
   };
 
   // ✅ FIXED DELETE LOGIC
-  const handleDelete = async () => {
+const handleDelete = async () => {
     // Pass the actual currentFolder ('trash', 'inbox', etc.)
     // If currentFolder is 'trash', the server action will perform a Hard Delete.
     await deleteEmailsAction([email.id], currentFolder);
     
-    if (currentFolder === 'trash') {
+    const isHardDelete = currentFolder === 'trash'; // Used for toast/logic clarity
+
+    if (isHardDelete) {
       toast.success("Permanently deleted");
     } else {
       toast.success("Moved to trash");
     }
     
-    // Redirect back to the specific folder list we came from
+    // CRITICAL FIX: Redirect back to the specific folder list immediately.
+    // This solves the "Access Denied" error and the list disappearing after view.
     router.push(`/email?folder=${currentFolder}`); 
   };
 

@@ -1,4 +1,4 @@
-//app/(dashboard)/email/email-actions.tsx
+// app/(dashboard)/email/email-actions.tsx
 "use server";
 
 import { getCurrentSession } from "@/lib/auth-server";
@@ -14,22 +14,20 @@ export async function sendEmailAction(data: {
   bccIds: string[];
   subject: string;
   body: string;
-  fileIds?: string[]; 
-  isE2EE?: boolean; 
+  fileIds?: string[];
+  isE2EE?: boolean;
 }) {
   const { user } = await getCurrentSession();
   if (!user) throw new Error("Unauthorized");
 
-  const fileIds = data.fileIds ?? [];
+  const fileIds = data.fileIds ?? []; // 1. Prepare recipients with types
 
-  // 1. Prepare recipients with types
   const allRecipients = [
     ...data.toIds.map((id) => ({ userId: id, type: "TO" as const })),
     ...data.ccIds.map((id) => ({ userId: id, type: "CC" as const })),
     ...data.bccIds.map((id) => ({ userId: id, type: "BCC" as const })),
-  ];
+  ]; // 2. Create Email & Recipients
 
-  // 2. Create Email & Recipients
   const email = await prisma.email.create({
     data: {
       subject: data.subject,
@@ -46,9 +44,8 @@ export async function sendEmailAction(data: {
         })),
       },
     },
-  });
+  }); // 3. Link uploaded files as attachments
 
-  // 3. Link uploaded files as attachments 
   if (fileIds.length > 0) {
     const files = await prisma.file.findMany({
       where: { id: { in: fileIds } },
@@ -63,20 +60,20 @@ export async function sendEmailAction(data: {
           type: file.mimeType?.startsWith("image/")
             ? "IMAGE"
             : file.mimeType?.startsWith("video/")
-            ? "VIDEO"
-            : "FILE",
+              ? "VIDEO"
+              : "FILE",
         })),
       });
     }
-  }
+  } // 4. Real-time Notifications (Fire & Forget)
 
-  // 4. Real-time Notifications (Fire & Forget)
   try {
-    const SOCKET_URL = "http://localhost:3001/trigger-email";
-
-    // NOTE: If the subject/body is E2EE, we send the encrypted subject/a generic preview
+    const SOCKET_URL = "http://localhost:3001/trigger-email"; // NOTE: If the subject/body is E2EE, we send the encrypted subject/a generic preview
     // to the socket.
-    const previewBody = data.isE2EE ? "(Encrypted Message)" : (data.body || "").substring(0, 50) + "...";
+
+    const previewBody = data.isE2EE
+      ? "(Encrypted Message)"
+      : (data.body || "").substring(0, 50) + "...";
     const previewSubject = data.isE2EE ? "(Encrypted Subject)" : data.subject;
 
     if (allRecipients.length > 0) {
@@ -173,72 +170,69 @@ export async function archiveEmailsAction(emailIds: string[]) {
 // 4. DELETE / TRASH (Multi-Support & Hard/Soft Delete)
 // =========================================================
 export async function deleteEmailsAction(
-    emailIds: string[],
-    currentFolder: string
+  emailIds: string[],
+  currentFolder: string
 ) {
-    const { user } = await getCurrentSession();
-    if (!user) return;
+  const { user } = await getCurrentSession();
+  if (!user) return;
 
-    if (currentFolder === "trash") {
-        // 1. HARD DELETE (User is deleting from their trash)
+  if (currentFolder === "trash") {
+    // 1. HARD DELETE: Permanently remove the email from the current user's view.
 
-        // Hard delete the current user's recipient record
-        await prisma.emailRecipient.deleteMany({
-            where: { userId: user.id, emailId: { in: emailIds } },
-        });
-        
-        // Hard delete the sender's record if the current user was the sender.
-        // This is necessary because the Email model is tied to the sender.
-        await prisma.email.deleteMany({ 
-            where: { senderId: user.id, id: { in: emailIds } },
-        });
+    const permanentlyDeletedIds: string[] = [];
 
+    // A. Delete the current user's EmailRecipient record(s).
+    await prisma.emailRecipient.deleteMany({
+      where: { userId: user.id, emailId: { in: emailIds } },
+    });
 
-        // Check if the *Email* record itself can be deleted globally
-        for (const emailId of emailIds) {
-            
-            // Count remaining recipient views (any user still holding a record)
-            const remainingRecipients = await prisma.emailRecipient.count({
-                where: { emailId: emailId },
-            });
-            
-            // Check the sender's status in the main Email table
-            const senderEmail = await prisma.email.findUnique({
-                where: { id: emailId },
-                select: { senderFolder: true, senderId: true },
-            });
+    // B. Delete the sender's Email record if the current user was the sender.
+    await prisma.email.deleteMany({
+      where: { senderId: user.id, id: { in: emailIds } },
+    });
 
-            // isSenderDeleted will be TRUE if the sender record was deleted by the line above, 
-            // OR if it exists and senderFolder is 'trash'.
-            const isSenderDeleted = !senderEmail || senderEmail.senderFolder === 'trash';
+    // C. Conditional Global Delete: Check if the central Email record can be removed globally.
+    for (const emailId of emailIds) {
+      const totalRemainingRecipientViews = await prisma.emailRecipient.count({
+        where: { emailId: emailId },
+      });
 
-            // Perform the true, permanent email record deletion only if all user views are gone.
-            if (remainingRecipients === 0 && isSenderDeleted) {
-                // FIX: Use deleteMany instead of delete() to avoid failure if the record 
-                // was already deleted by the `deleteEmailsAction` above.
-                await prisma.email.deleteMany({ where: { id: emailId } });
-            }
-        }
+      const senderEmail = await prisma.email.findUnique({
+        where: { id: emailId },
+        select: { senderFolder: true },
+      });
 
-    } else {
-        // 2. SOFT DELETE: Move to trash folder
-        await Promise.all([
-            // Update the recipient record for the current user
-            prisma.emailRecipient.updateMany({
-                where: { userId: user.id, emailId: { in: emailIds } },
-                data: { folder: "trash" },
-            }),
-            // Update the sender record for the current user
-            prisma.email.updateMany({
-                where: { senderId: user.id, id: { in: emailIds } },
-                data: { senderFolder: "trash" },
-            }),
-        ]);
+      const isSenderViewGone =
+        !senderEmail ||
+        senderEmail.senderFolder === "trash" ||
+        senderEmail.senderFolder === "archive";
+
+      if (totalRemainingRecipientViews === 0 && isSenderViewGone) {
+        await prisma.email.deleteMany({ where: { id: emailId } });
+        permanentlyDeletedIds.push(emailId);
+      }
     }
 
     revalidatePath("/email");
-}
+    // Return the list of IDs that the current user deleted from their view.
+    return { deletedIds: emailIds, isHardDelete: true };
+  } else {
+    // 2. SOFT DELETE: Move to trash folder (User-specific update)
+    await Promise.all([
+      prisma.emailRecipient.updateMany({
+        where: { userId: user.id, emailId: { in: emailIds } },
+        data: { folder: "trash" },
+      }),
+      prisma.email.updateMany({
+        where: { senderId: user.id, id: { in: emailIds } },
+        data: { senderFolder: "trash" },
+      }),
+    ]);
 
+    revalidatePath("/email");
+    return { deletedIds: emailIds, isHardDelete: false };
+  }
+}
 // =========================================================
 // 5. STAR / UNSTAR (Multi-Support)
 // =========================================================
@@ -288,10 +282,7 @@ export async function updateEmailReadStatusAction(
   revalidatePath("/email");
 }
 
-export async function toggleReadStatusAction(
-  emailId: string,
-  isRead: boolean
-) {
+export async function toggleReadStatusAction(emailId: string, isRead: boolean) {
   return updateEmailReadStatusAction([emailId], isRead);
 }
 
