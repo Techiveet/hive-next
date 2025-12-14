@@ -362,6 +362,28 @@ export function ComposeDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultValues, isOpen]);
 
+  useEffect(() => {
+  const handler = () => {
+    setOpen(true);
+    // brand new message
+    setEditingDraftId(null);
+    setToIds([]);
+    setCcIds([]);
+    setBccIds([]);
+    setSubject("");
+    setBody("");
+    setShowCcBcc(false);
+    setAttachments([]);
+    setIsE2EE(false);
+    setRecipientPublicKeys({});
+  };
+
+  window.addEventListener("open-compose", handler);
+  return () => window.removeEventListener("open-compose", handler);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
+
+
   const resetForm = () => {
     setEditingDraftId(null);
     setToIds([]);

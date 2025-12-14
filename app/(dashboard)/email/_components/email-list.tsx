@@ -35,9 +35,11 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type React from "react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
+import { useEmailHotkeys } from "../_hooks/use-email-hotkeys";
 
 // ---------- TYPES ----------
 export type EmailAttachment = {
@@ -125,9 +127,7 @@ const EmailRow = memo(function EmailRow({
 
   const timeAgo = useMemo(() => {
     try {
-      return formatDistanceToNow(new Date(data.createdAt), {
-        addSuffix: true,
-      });
+      return formatDistanceToNow(new Date(data.createdAt), { addSuffix: true });
     } catch {
       return "recently";
     }
@@ -212,6 +212,7 @@ const EmailRow = memo(function EmailRow({
                 {displayName?.[0]?.toUpperCase() || "?"}
               </AvatarFallback>
             </Avatar>
+
             <span
               className={cn(
                 "text-sm truncate max-w-[150px]",
@@ -227,13 +228,12 @@ const EmailRow = memo(function EmailRow({
             {hasAttachments && (
               <Paperclip className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500 shrink-0 transition-transform group-hover:scale-110" />
             )}
+
             {isE2EE && (
               <Lock
                 className={cn(
                   "h-3.5 w-3.5 shrink-0 transition-transform group-hover:scale-110",
-                  !isRead
-                    ? "text-emerald-500"
-                    : "text-slate-400 dark:text-slate-500"
+                  !isRead ? "text-emerald-500" : "text-slate-400 dark:text-slate-500"
                 )}
               />
             )}
@@ -287,7 +287,7 @@ const EmailRow = memo(function EmailRow({
 // ---------- MAIN EMAIL LIST COMPONENT ----------
 export function EmailList({
   initialEmails,
-  currentUserId,
+  currentUserId, // (kept for signature)
   folderName,
   pageSize = 10,
   searchQuery: initialSearch = "",
@@ -318,6 +318,7 @@ export function EmailList({
 
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const activeEmailId = (params as any)?.id ?? null;
 
@@ -330,7 +331,6 @@ export function EmailList({
     const start = (currentPage - 1) * pageSize + 1;
     const end = (currentPage - 1) * pageSize + emails.length;
 
-    // If totalEmails unknown (0) but we still have items, show a meaningful count
     const effectiveTotal =
       totalEmails > 0 ? totalEmails : emails.length > 0 ? end : 0;
 
@@ -347,7 +347,6 @@ export function EmailList({
     setCursor(nextCursor ?? null);
     setHasMore(!!nextCursor);
 
-    // ✅ keep totalCount if provided, otherwise fallback to initialEmails length
     setTotalEmails(typeof totalCount === "number" ? totalCount : initialEmails.length);
 
     setCurrentPage(1);
@@ -365,13 +364,13 @@ export function EmailList({
       setLoading(true);
 
       try {
-        const params = new URLSearchParams();
-        params.set("folder", folderName);
-        params.set("pageSize", pageSize.toString());
-        if (search.trim()) params.set("q", search.trim());
-        if (cursorParam) params.set("cursor", cursorParam);
+        const qs = new URLSearchParams();
+        qs.set("folder", folderName);
+        qs.set("pageSize", pageSize.toString());
+        if (search.trim()) qs.set("q", search.trim());
+        if (cursorParam) qs.set("cursor", cursorParam);
 
-        const response = await fetch(`/api/emails?${params.toString()}`);
+        const response = await fetch(`/api/emails?${qs.toString()}`);
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -380,7 +379,9 @@ export function EmailList({
             const errorJson = JSON.parse(errorText);
             throw new Error(errorJson.message || `Server error: ${response.status}`);
           } catch {
-            throw new Error(`Failed to fetch: ${response.status} - ${errorText.substring(0, 50)}`);
+            throw new Error(
+              `Failed to fetch: ${response.status} - ${errorText.substring(0, 50)}`
+            );
           }
         }
 
@@ -395,11 +396,11 @@ export function EmailList({
         // ✅ DO NOT overwrite totalEmails with 0 if API didn’t send it
         if (typeof data.totalCount === "number") {
           setTotalEmails(data.totalCount);
-        } else if (typeof data.totalCount === "string" && !Number.isNaN(Number(data.totalCount))) {
+        } else if (
+          typeof data.totalCount === "string" &&
+          !Number.isNaN(Number(data.totalCount))
+        ) {
           setTotalEmails(Number(data.totalCount));
-        } else {
-          // keep existing totalEmails (don’t kill it)
-          setTotalEmails((prev) => prev);
         }
 
         if (cursorParam) {
@@ -433,6 +434,7 @@ export function EmailList({
   const loadPreviousPage = useCallback(() => {
     if (!enablePagination || currentPage <= 1 || loading) return;
     const previousPage = currentPage - 1;
+
     if (previousPage === 1) {
       fetchEmails(null, searchQuery, 1);
     } else if (cursorHistory.length >= previousPage - 1) {
@@ -475,81 +477,87 @@ export function EmailList({
   }, [emails, selectedIds]);
 
   const toggleSelectOne = useCallback((id: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   }, []);
 
-  const handleToggleStar = useCallback((id: string, currentStatus: boolean) => {
-    const newStatus = !currentStatus;
-    const emailItem = emails.find(e => e.id === id);
+  const handleToggleStar = useCallback(
+    (id: string, currentStatus: boolean) => {
+      const newStatus = !currentStatus;
+      const emailItem = emails.find((e) => e.id === id);
 
-    setEmails((prev) =>
-      prev.map((e) => (e.id === id ? { ...e, isStarred: newStatus } : e))
-    );
+      setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, isStarred: newStatus } : e)));
 
-    startTransition(async () => {
-      try {
-        const result = await updateEmailStarStatusAction([id], newStatus);
+      startTransition(async () => {
+        try {
+          const result = await updateEmailStarStatusAction([id], newStatus);
 
-        if (typeof window !== 'undefined') {
-          const eventName = newStatus ? 'email-starred' : 'email-unstarred';
-          window.dispatchEvent(new CustomEvent(eventName, {
-            detail: { id, emailId: emailItem?.emailId }
-          }));
-          window.dispatchEvent(new CustomEvent('refresh-sidebar-counts'));
+          if (typeof window !== "undefined") {
+            const eventName = newStatus ? "email-starred" : "email-unstarred";
+            window.dispatchEvent(
+              new CustomEvent(eventName, { detail: { id, emailId: emailItem?.emailId } })
+            );
+            window.dispatchEvent(new CustomEvent("refresh-sidebar-counts"));
+          }
+
+          if (result.message) toast.success(result.message);
+        } catch {
+          setEmails((prev) =>
+            prev.map((e) => (e.id === id ? { ...e, isStarred: currentStatus } : e))
+          );
+          toast.error("Failed to update star status");
         }
+      });
+    },
+    [emails]
+  );
 
-        if (result.message) toast.success(result.message);
-      } catch {
-        setEmails((prev) =>
-          prev.map((e) => (e.id === id ? { ...e, isStarred: currentStatus } : e))
-        );
-        toast.error("Failed to update star status");
-      }
-    });
-  }, [emails]);
-
+  // ✅ Now supports passing ids directly (for hotkeys)
   const handleBulkAction = useCallback(
     async (
-      action: "delete" | "archive" | "markRead" | "markUnread" | "spam"
+      action: "delete" | "archive" | "markRead" | "markUnread" | "spam",
+      ids?: string[]
     ) => {
-      if (selectedIds.length === 0) return;
+      const targetIds = ids ?? selectedIds;
+      if (targetIds.length === 0) return;
 
-      const selectedItems = emails.filter((e) => selectedIds.includes(e.id));
+      const selectedItems = emails.filter((e) => targetIds.includes(e.id));
       const affectedEmails = [...selectedItems];
 
-      setEmails((prev) => prev.filter((e) => !selectedIds.includes(e.id)));
+      // Optimistic update
+      setEmails((prev) => prev.filter((e) => !targetIds.includes(e.id)));
       setSelectedIds([]);
 
       startTransition(async () => {
         try {
           let result: any;
+
           switch (action) {
             case "delete":
-              result = await deleteEmailsAction(selectedIds, folderName);
+              result = await deleteEmailsAction(targetIds, folderName);
               break;
             case "archive":
-              result = await archiveEmailsAction(selectedIds);
+              result = await archiveEmailsAction(targetIds);
               break;
             case "markRead":
-              result = await updateEmailReadStatusAction(selectedIds, true);
+              result = await updateEmailReadStatusAction(targetIds, true);
               break;
             case "markUnread":
-              result = await updateEmailReadStatusAction(selectedIds, false);
+              result = await updateEmailReadStatusAction(targetIds, false);
               break;
             case "spam":
-              result = await markAsSpamAction(selectedIds, folderName);
+              result = await markAsSpamAction(targetIds, folderName);
               break;
           }
 
           if (result?.message) toast.success(result.message);
 
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('refresh-sidebar-counts'));
-            window.dispatchEvent(new CustomEvent('email-action-completed', {
-              detail: { action, count: selectedIds.length }
-            }));
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("refresh-sidebar-counts"));
+            window.dispatchEvent(
+              new CustomEvent("email-action-completed", {
+                detail: { action, count: targetIds.length },
+              })
+            );
           }
 
           if (enablePagination) {
@@ -560,8 +568,9 @@ export function EmailList({
             router.refresh();
           }
         } catch (error) {
+          // Revert optimistic update
           setEmails((prev) => {
-            const remaining = prev.filter((e) => !selectedIds.includes(e.id));
+            const remaining = prev.filter((e) => !targetIds.includes(e.id));
             return [...affectedEmails, ...remaining].sort(
               (a, b) =>
                 new Date(b.email.createdAt).getTime() -
@@ -578,24 +587,149 @@ export function EmailList({
   const handleRowClick = useCallback(
     (emailId: string) => {
       if (folderName === "drafts") {
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("open-draft-compose", {
-              detail: { draftId: emailId },
-            })
-          );
-        }
+        window.dispatchEvent(new CustomEvent("open-draft-compose", { detail: { draftId: emailId } }));
         return;
       }
 
       const detailParams = new URLSearchParams();
       detailParams.set("folder", folderName);
       if (searchQuery) detailParams.set("q", searchQuery);
+
       const currentCursor = searchParams.get("cursor");
       if (currentCursor) detailParams.set("cursor", currentCursor);
+
       router.push(`/email/${emailId}?${detailParams.toString()}`);
     },
     [router, folderName, searchQuery, searchParams]
+  );
+
+  // -------------------------
+  // Keyboard shortcuts
+  // -------------------------
+  const activeIndex = useMemo(() => {
+    if (!activeEmailId) return -1;
+    return emails.findIndex((e) => e.emailId === activeEmailId);
+  }, [emails, activeEmailId]);
+
+  const openByIndex = useCallback(
+    (idx: number) => {
+      const item = emails[idx];
+      if (!item) return;
+      handleRowClick(item.emailId);
+    },
+    [emails, handleRowClick]
+  );
+
+  const openActiveOrFirst = useCallback(() => {
+    if (activeIndex >= 0) return openByIndex(activeIndex);
+    if (emails.length) return openByIndex(0);
+  }, [activeIndex, emails.length, openByIndex]);
+
+  const moveDown = useCallback(() => {
+    if (!emails.length) return;
+    const next = activeIndex < 0 ? 0 : Math.min(activeIndex + 1, emails.length - 1);
+    openByIndex(next);
+  }, [emails.length, activeIndex, openByIndex]);
+
+  const moveUp = useCallback(() => {
+    if (!emails.length) return;
+    const prev = activeIndex < 0 ? 0 : Math.max(activeIndex - 1, 0);
+    openByIndex(prev);
+  }, [emails.length, activeIndex, openByIndex]);
+
+  const activeItem = useMemo(() => {
+    if (activeIndex < 0) return null;
+    return emails[activeIndex] ?? null;
+  }, [activeIndex, emails]);
+
+  useEmailHotkeys(
+    {
+      // navigation
+      j: (e) => {
+        e.preventDefault();
+        moveDown();
+      },
+      k: (e) => {
+        e.preventDefault();
+        moveUp();
+      },
+      enter: (e) => {
+        e.preventDefault();
+        openActiveOrFirst();
+      },
+      o: (e) => {
+        e.preventDefault();
+        openActiveOrFirst();
+      },
+
+      // focus search
+      "/": (e) => {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      },
+
+      // compose
+      c: (e) => {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent("open-compose"));
+      },
+
+      // select active
+      x: (e) => {
+        e.preventDefault();
+        if (!activeItem) return;
+        toggleSelectOne(activeItem.id);
+      },
+
+      // star active
+      s: (e) => {
+        e.preventDefault();
+        if (!activeItem) return;
+        handleToggleStar(activeItem.id, !!activeItem.isStarred);
+      },
+
+      // archive selected OR active
+      e: (e) => {
+        e.preventDefault();
+        const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
+        handleBulkAction("archive", ids);
+      },
+
+      // delete selected OR active (#)
+      "#": (e) => {
+        e.preventDefault();
+        const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
+        handleBulkAction("delete", ids);
+      },
+      "shift+#": (e) => {
+        e.preventDefault();
+        const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
+        handleBulkAction("delete", ids);
+      },
+      "shift+3": (e) => {
+        e.preventDefault();
+        const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
+        handleBulkAction("delete", ids);
+      },
+
+      // spam selected OR active (!)
+      "!": (e) => {
+        e.preventDefault();
+        const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
+        handleBulkAction("spam", ids);
+      },
+      "shift+!": (e) => {
+        e.preventDefault();
+        const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
+        handleBulkAction("spam", ids);
+      },
+      "shift+1": (e) => {
+        e.preventDefault();
+        const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
+        handleBulkAction("spam", ids);
+      },
+    },
+    true
   );
 
   if (loading && emails.length === 0) {
@@ -648,7 +782,7 @@ export function EmailList({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => handleBulkAction("markRead")}
+                onClick={() => handleBulkAction("markRead", selectedIds)}
                 title="Mark as read"
                 disabled={isPending}
               >
@@ -657,38 +791,41 @@ export function EmailList({
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => handleBulkAction("markUnread")}
+                onClick={() => handleBulkAction("markUnread", selectedIds)}
                 title="Mark as unread"
                 disabled={isPending}
               >
                 <Mail className="h-4 w-4" />
               </Button>
+
               {folderName !== "archive" && folderName !== "sent" && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => handleBulkAction("archive")}
+                  onClick={() => handleBulkAction("archive", selectedIds)}
                   title="Archive"
                   disabled={isPending}
                 >
                   <Archive className="h-4 w-4" />
                 </Button>
               )}
+
               {folderName !== "spam" && (
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => handleBulkAction("spam")}
+                  onClick={() => handleBulkAction("spam", selectedIds)}
                   title="Mark as spam"
                   disabled={isPending}
                 >
                   <ShieldAlert className="h-4 w-4" />
                 </Button>
               )}
+
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => handleBulkAction("delete")}
+                onClick={() => handleBulkAction("delete", selectedIds)}
                 title="Delete"
                 disabled={isPending}
               >
@@ -702,10 +839,7 @@ export function EmailList({
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={
-                    emails.length > 0 &&
-                    emails.every((e) => selectedIds.includes(e.id))
-                  }
+                  checked={emails.length > 0 && emails.every((e) => selectedIds.includes(e.id))}
                   onChange={toggleSelectAll}
                   className="h-4 w-4 rounded border-slate-300 accent-emerald-500 cursor-pointer dark:border-slate-600"
                 />
@@ -713,13 +847,13 @@ export function EmailList({
                   {folderName}
                 </h2>
               </div>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                {pageRange}
-              </span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">{pageRange}</span>
             </div>
+
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
               <Input
+                ref={searchInputRef}
                 placeholder="Search emails..."
                 className="pl-9 h-9 text-sm bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800"
                 value={searchInput}
@@ -737,9 +871,7 @@ export function EmailList({
             {searchQuery ? (
               <>
                 <Search className="h-12 w-12 text-slate-300 dark:text-slate-700 mb-3" />
-                <p className="font-medium text-slate-700 dark:text-slate-300">
-                  Nothing found
-                </p>
+                <p className="font-medium text-slate-700 dark:text-slate-300">Nothing found</p>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                   Try a different search term
                 </p>
@@ -747,9 +879,7 @@ export function EmailList({
             ) : (
               <>
                 <Mail className="h-12 w-12 text-slate-300 dark:text-slate-700 mb-3" />
-                <p className="font-medium text-slate-700 dark:text-slate-300">
-                  No emails here
-                </p>
+                <p className="font-medium text-slate-700 dark:text-slate-300">No emails here</p>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                   {folderName === "inbox"
                     ? "Your inbox is looking empty"
@@ -794,8 +924,10 @@ export function EmailList({
       {enablePagination && (
         <div className="mt-auto border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex-shrink-0 z-10">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3">
+            {/* ✅ this is where you said “add it here” */}
             <div className="text-sm text-slate-600 dark:text-slate-400 font-medium">
               {pageRange}
+               
             </div>
 
             <div className="flex items-center gap-1">
