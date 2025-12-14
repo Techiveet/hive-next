@@ -5,6 +5,10 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { getCurrentSession } from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
 
+// =========================================================
+// Helpers
+// =========================================================
+
 // Helper to trigger sidebar refresh events
 async function triggerSidebarEvents(actionType: string, details?: any) {
   revalidateTag("sidebar-counts");
@@ -24,6 +28,110 @@ async function triggerSidebarEvents(actionType: string, details?: any) {
   } catch (error) {
     console.error("Socket trigger error:", error);
   }
+}
+
+type SpamScanResult = {
+  isSpam: boolean;
+  score: number;
+  flags: string[];
+  reason: string | null;
+};
+
+function scanForSpam(subject: string, body: string, attachmentMimeTypes: string[] = []): SpamScanResult {
+  const s = (subject || "").toLowerCase();
+  const b = (body || "").toLowerCase();
+
+  const flags: string[] = [];
+  let score = 0;
+
+  const hasLink = /(https?:\/\/|www\.)/.test(b);
+  const linkCount = (b.match(/https?:\/\/|www\./g) || []).length;
+
+  // script injection patterns
+  if (/<script|javascript:|onerror=|onload=/.test(b)) {
+    flags.push("SCRIPT_INJECTION");
+    score += 0.95;
+  }
+
+  // urgency / pressure
+  const urgency = ["urgent", "immediately", "within", "minutes", "suspended", "locked", "disabled", "final notice"];
+  if (urgency.some(w => s.includes(w) || b.includes(w))) {
+    flags.push("URGENCY_LANGUAGE");
+    score += 0.35;
+  }
+
+  // phishing language
+  const phishing = ["verify", "password", "login", "reset", "security", "account", "wallet", "bank", "confirm"];
+  const hasPhishing = phishing.some(w => s.includes(w) || b.includes(w));
+  if (hasPhishing) {
+    flags.push("PHISHING_LANGUAGE");
+    score += 0.45;
+  }
+
+  // phishing combo: phishing words + link => spam
+  if (hasPhishing && hasLink) {
+    flags.push("PHISHING_WITH_LINK");
+    score += 0.35;
+  }
+
+  // many links
+  if (linkCount >= 2) {
+    flags.push("MANY_LINKS");
+    score += 0.25;
+  }
+
+  // suspicious TLDs / URL tricks (very basic)
+  if (hasLink && /(\.zip|\.mov|\.top|\.xyz|bit\.ly|tinyurl|t\.co)/.test(b)) {
+    flags.push("SUSPICIOUS_LINK");
+    score += 0.35;
+  }
+
+  // dangerous attachments
+  const dangerousMimes = new Set([
+    "application/x-msdownload",
+    "application/x-msdos-program",
+    "application/x-executable",
+    "application/x-dosexec",
+    "application/java-archive",
+    "application/x-sh",
+    "application/x-bat",
+  ]);
+  if (attachmentMimeTypes.some(m => dangerousMimes.has((m || "").toLowerCase()))) {
+    flags.push("DANGEROUS_ATTACHMENT");
+    score += 0.7;
+  }
+
+  const isSpam = score >= 0.7;
+
+  return {
+    isSpam,
+    score: Math.min(score, 1),
+    flags,
+    reason: isSpam ? "Potential phishing / malicious content detected." : null,
+  };
+}
+
+/**
+ * Resolve recipient row for current user from either:
+ * - EmailRecipient.id
+ * - Email.id
+ */
+async function resolveRecipientRowForUser(userId: string, emailIdOrRecipientId: string) {
+  // 1) try recipient.id
+  const byRecipientId = await prisma.emailRecipient.findFirst({
+    where: { userId, id: emailIdOrRecipientId },
+    select: { id: true, emailId: true, folder: true, previousFolder: true },
+  });
+
+  if (byRecipientId) return byRecipientId;
+
+  // 2) try emailId
+  const byEmailId = await prisma.emailRecipient.findFirst({
+    where: { userId, emailId: emailIdOrRecipientId },
+    select: { id: true, emailId: true, folder: true, previousFolder: true },
+  });
+
+  return byEmailId;
 }
 
 // =========================================================
@@ -53,6 +161,18 @@ export async function sendEmailAction(data: {
   const socketUrl = process.env.INTERNAL_SOCKET_URL || "http://localhost:3001";
   const SOCKET_ENDPOINT = `${socketUrl}/trigger-email`;
 
+  // ✅ scan only if NOT encrypted (you cannot reliably scan encrypted content)
+  const filesForScan = fileIds.length
+    ? await prisma.file.findMany({
+        where: { id: { in: fileIds } },
+        select: { mimeType: true },
+      })
+    : [];
+
+  const spamScan = data.isE2EE
+    ? ({ isSpam: false, score: 0, flags: [], reason: null } as SpamScanResult)
+    : scanForSpam(data.subject, data.body, filesForScan.map((f) => f.mimeType || ""));
+
   const email = await prisma.$transaction(async (tx) => {
     // ✅ CASE 1: Sending from a draft → convert draft to sent
     if (data.draftId) {
@@ -64,26 +184,67 @@ export async function sendEmailAction(data: {
         },
         select: { id: true },
       });
+ 
 
       if (!draft) {
-        // fallback: if draft not found, just send normally (avoid crashing)
-        return tx.email.create({
-          data: {
-            subject: data.subject,
-            body: data.body,
-            senderId: user.id,
-            senderFolder: "sent",
-            isE2EE: data.isE2EE || false,
-            recipients: {
-              create: allRecipients.map((r) => ({
-                userId: r.userId,
-                folder: "inbox",
-                isRead: false,
-                type: r.type,
+        // fallback send
+        const isSpam = Boolean(spamScan?.isSpam);
+
+const created = await tx.email.create({
+  data: {
+    subject: data.subject,
+    body: data.body,
+    senderId: user.id,
+    senderFolder: "sent",
+    isE2EE: data.isE2EE || false,
+    recipients: {
+      create: allRecipients.map((r) => ({
+        userId: r.userId,
+
+        // ✅ spam routing
+        folder: isSpam ? "spam" : "inbox",
+
+        // ✅ only set spam metadata when spam (avoid nulls)
+        ...(isSpam
+          ? {
+              previousFolder: "inbox",
+              spamReason: spamScan.reason ?? "Potential spam detected",
+              spamScore: spamScan.score ?? 0.8,
+              spamFlags: spamScan.flags ?? [],
+            }
+          : {}),
+
+        isRead: false,
+        type: r.type,
+      })),
+    },
+  },
+});
+
+
+        // attachments
+        if (fileIds.length) {
+          const files = await tx.file.findMany({
+            where: { id: { in: fileIds } },
+            select: { id: true, mimeType: true },
+          });
+
+          if (files.length) {
+            await tx.emailAttachment.createMany({
+              data: files.map((file) => ({
+                emailId: created.id,
+                fileId: file.id,
+                type: file.mimeType?.startsWith("image/")
+                  ? "IMAGE"
+                  : file.mimeType?.startsWith("video/")
+                  ? "VIDEO"
+                  : "FILE",
               })),
-            },
-          },
-        });
+            });
+          }
+        }
+
+        return created;
       }
 
       // 1) Update draft content and move to sent
@@ -94,20 +255,23 @@ export async function sendEmailAction(data: {
           body: data.body,
           senderFolder: "sent",
           isE2EE: data.isE2EE || false,
-
-          // Optional but recommended so it appears as "just sent"
-          createdAt: new Date(),
+          createdAt: new Date(), // optional: make it appear "just sent"
         },
       });
 
-      // 2) Replace recipients (draft should have none, but safe)
+      // 2) Replace recipients
       await tx.emailRecipient.deleteMany({ where: { emailId: updated.id } });
+
       if (allRecipients.length) {
         await tx.emailRecipient.createMany({
           data: allRecipients.map((r) => ({
             emailId: updated.id,
             userId: r.userId,
-            folder: "inbox",
+            folder: spamScan.isSpam ? "spam" : "inbox",
+            previousFolder: spamScan.isSpam ? "inbox" : null,
+            spamReason: spamScan.isSpam ? spamScan.reason : null,
+            spamScore: spamScan.isSpam ? spamScan.score : null,
+            spamFlags: spamScan.isSpam ? spamScan.flags : null,
             isRead: false,
             type: r.type,
             createdAt: new Date(),
@@ -143,23 +307,39 @@ export async function sendEmailAction(data: {
     }
 
     // ✅ CASE 2: Normal send (not from draft)
-    const created = await tx.email.create({
-      data: {
-        subject: data.subject,
-        body: data.body,
-        senderId: user.id,
-        senderFolder: "sent",
-        isE2EE: data.isE2EE || false,
-        recipients: {
-          create: allRecipients.map((r) => ({
-            userId: r.userId,
-            folder: "inbox",
-            isRead: false,
-            type: r.type,
-          })),
-        },
-      },
-    });
+  const isSpam = Boolean(spamScan?.isSpam);
+
+const created = await tx.email.create({
+  data: {
+    subject: data.subject,
+    body: data.body,
+    senderId: user.id,
+    senderFolder: "sent",
+    isE2EE: data.isE2EE || false,
+    recipients: {
+      create: allRecipients.map((r) => ({
+        userId: r.userId,
+
+        // ✅ spam routing
+        folder: isSpam ? "spam" : "inbox",
+
+        // ✅ only set spam metadata when spam (avoid nulls)
+        ...(isSpam
+          ? {
+              previousFolder: "inbox",
+              spamReason: spamScan.reason ?? "Potential spam detected",
+              spamScore: spamScan.score ?? 0.8,
+              spamFlags: spamScan.flags ?? [],
+            }
+          : {}),
+
+        isRead: false,
+        type: r.type,
+      })),
+    },
+  },
+});
+
 
     if (fileIds.length) {
       const files = await tx.file.findMany({
@@ -185,7 +365,7 @@ export async function sendEmailAction(data: {
     return created;
   });
 
-  // ✅ sockets (same as before)
+  // ✅ sockets
   try {
     const previewBody = data.isE2EE
       ? "(Encrypted Message)"
@@ -225,12 +405,21 @@ export async function sendEmailAction(data: {
     console.error("Socket error:", error);
   }
 
+  // refresh UI
+  await triggerSidebarEvents(spamScan.isSpam ? "auto-spam" : "send", {
+    emailId: email.id,
+    userId: user.id,
+    isSpam: spamScan.isSpam,
+    spamScore: spamScan.score,
+    spamFlags: spamScan.flags,
+  });
+
   revalidatePath("/email");
-  return { success: true, id: email.id };
+  return { success: true, id: email.id, isSpam: spamScan.isSpam };
 }
 
 // =========================================================
-// 2. SAVE DRAFT  ✅ upgraded
+// 2. SAVE DRAFT  ✅ fixed + clean
 // =========================================================
 export async function saveDraftAction(data: {
   toIds: string[];
@@ -243,21 +432,17 @@ export async function saveDraftAction(data: {
   const { user } = await getCurrentSession();
   if (!user) throw new Error("Unauthorized");
 
+  const fileIds = data.fileIds ?? [];
+
   const email = await prisma.email.create({
     data: {
       subject: data.subject,
       body: data.body,
       senderId: user.id,
       senderFolder: "drafts",
-
-      // If you have these columns (recommended). If you don't, remove them.
-      // toIds: data.toIds,
-      // ccIds: data.ccIds ?? [],
-      // bccIds: data.bccIds ?? [],
     },
   });
 
-  const fileIds = data.fileIds ?? [];
   if (fileIds.length) {
     const files = await prisma.file.findMany({
       where: { id: { in: fileIds } },
@@ -279,12 +464,14 @@ export async function saveDraftAction(data: {
     }
   }
 
+  await triggerSidebarEvents("draft-saved", { userId: user.id, emailId: email.id });
+
   revalidatePath("/email");
   return { success: true, id: email.id };
 }
 
 // =========================================================
-// ✅ 2b. UPDATE DRAFT (NEW)
+// 2b. UPDATE DRAFT (NEW)
 // =========================================================
 export async function updateDraftAction(data: {
   id: string;
@@ -299,7 +486,6 @@ export async function updateDraftAction(data: {
   if (!user) throw new Error("Unauthorized");
 
   await prisma.$transaction(async (tx) => {
-    // Ensure it is really MY draft
     const draft = await tx.email.findFirst({
       where: { id: data.id, senderId: user.id, senderFolder: "drafts" },
       select: { id: true },
@@ -313,15 +499,9 @@ export async function updateDraftAction(data: {
         subject: data.subject,
         body: data.body,
         senderFolder: "drafts",
-
-        // If you have these columns (recommended). If you don't, remove them.
-        // toIds: data.toIds,
-        // ccIds: data.ccIds,
-        // bccIds: data.bccIds,
       },
     });
 
-    // replace attachments
     await tx.emailAttachment.deleteMany({ where: { emailId: data.id } });
 
     const fileIds = data.fileIds ?? [];
@@ -347,6 +527,8 @@ export async function updateDraftAction(data: {
     }
   });
 
+  await triggerSidebarEvents("draft-updated", { userId: user.id, emailId: data.id });
+
   revalidatePath("/email");
   return { success: true };
 }
@@ -363,20 +545,12 @@ export async function archiveEmailsAction(ids: string[]) {
 
     await prisma.$transaction(async (tx) => {
       const recipientResult = await tx.emailRecipient.updateMany({
-        where: {
-          userId: user.id,
-          id: { in: ids },
-          folder: { not: "archive" },
-        },
+        where: { userId: user.id, id: { in: ids }, folder: { not: "archive" } },
         data: { folder: "archive" },
       });
 
       const sentResult = await tx.email.updateMany({
-        where: {
-          senderId: user.id,
-          id: { in: ids },
-          senderFolder: { not: "archive" },
-        },
+        where: { senderId: user.id, id: { in: ids }, senderFolder: { not: "archive" } },
         data: { senderFolder: "archive" },
       });
 
@@ -495,7 +669,7 @@ export async function deleteEmailsAction(ids: string[], currentFolder: string) {
 }
 
 // =========================================================
-// 5. MARK AS SPAM
+// 5. MARK AS SPAM (upgraded: stores previousFolder + reason)
 // =========================================================
 export async function markAsSpamAction(ids: string[], currentFolder: string) {
   const { user } = await getCurrentSession();
@@ -504,6 +678,7 @@ export async function markAsSpamAction(ids: string[], currentFolder: string) {
   try {
     let spamCount = 0;
 
+    // Sender-side: Email.id
     if (currentFolder === "sent" || currentFolder === "drafts") {
       const result = await prisma.email.updateMany({
         where: { senderId: user.id, id: { in: ids }, senderFolder: { not: "spam" } },
@@ -511,11 +686,36 @@ export async function markAsSpamAction(ids: string[], currentFolder: string) {
       });
       spamCount = result.count;
     } else {
-      const result = await prisma.emailRecipient.updateMany({
-        where: { userId: user.id, id: { in: ids }, folder: { not: "spam" } },
-        data: { folder: "spam" },
+      // Receiver-side: EmailRecipient.id (store previousFolder + spam meta)
+      const rows = await prisma.emailRecipient.findMany({
+        where: { userId: user.id, id: { in: ids } },
+        select: { id: true, folder: true },
       });
-      spamCount = result.count;
+
+      const candidates = rows.filter((r) => r.folder !== "spam");
+      if (!candidates.length) {
+        return { success: true, spamCount: 0, message: "Already in spam" };
+      }
+
+      await prisma.$transaction(async (tx) => {
+        await Promise.all(
+          candidates.map((r) =>
+            tx.emailRecipient.update({
+              where: { id: r.id },
+              data: {
+                previousFolder: r.folder || "inbox",
+                folder: "spam",
+                spamReason: "This message is similar to messages that were identified as spam in the past.",
+                spamScore: 0.8,
+                spamFlags: ["USER_MARKED_SPAM"],
+                isStarred: false,
+              },
+            })
+          )
+        );
+      });
+
+      spamCount = candidates.length;
     }
 
     await triggerSidebarEvents("spam", { ids, count: spamCount, currentFolder, userId: user.id });
@@ -531,26 +731,61 @@ export async function markAsSpamAction(ids: string[], currentFolder: string) {
   }
 }
 
-// ✅ Spam by Email.id (works everywhere)
-// Uses your existing markAsSpamAction() internally.
-export async function markAsSpamByEmailIdAction(emailId: string, currentFolder: string) {
+// ✅ Spam by Email.id OR EmailRecipient.id (works everywhere)
+export async function markAsSpamByEmailIdAction(emailIdOrRecipientId: string, currentFolder: string) {
   const { user } = await getCurrentSession();
   if (!user) throw new Error("Unauthorized");
 
-  // Sender-side (sent/drafts): markAsSpamAction expects Email.id
+  // Sender-side expects Email.id
   if (currentFolder === "sent" || currentFolder === "drafts") {
-    return markAsSpamAction([emailId], currentFolder);
+    return markAsSpamAction([emailIdOrRecipientId], currentFolder);
   }
 
-  // Receiver-side (inbox/all/archive/starred/trash/etc): markAsSpamAction expects EmailRecipient.id
-  const recipientRow = await prisma.emailRecipient.findFirst({
-    where: { userId: user.id, emailId },
-    select: { id: true },
+  // Receiver-side: accept either recipient.id OR email.id
+  const row = await resolveRecipientRowForUser(user.id, emailIdOrRecipientId);
+  if (!row) throw new Error("Recipient record not found for this email");
+
+  return markAsSpamAction([row.id], currentFolder);
+}
+
+// ✅ Report not spam by Email.id OR EmailRecipient.id
+export async function reportNotSpamByEmailIdAction(emailIdOrRecipientId: string) {
+  const { user } = await getCurrentSession();
+  if (!user) throw new Error("Unauthorized");
+
+  const row = await resolveRecipientRowForUser(user.id, emailIdOrRecipientId);
+  if (!row) throw new Error("Spam record not found");
+
+  // must be spam
+  const spamRow = await prisma.emailRecipient.findFirst({
+    where: { userId: user.id, id: row.id, folder: "spam" },
+    select: { id: true, previousFolder: true },
   });
 
-  if (!recipientRow) throw new Error("Recipient record not found for this email");
+  if (!spamRow) throw new Error("Spam record not found");
 
-  return markAsSpamAction([recipientRow.id], currentFolder);
+  const restoreFolder = spamRow.previousFolder || "inbox";
+
+  await prisma.emailRecipient.update({
+    where: { id: spamRow.id },
+    data: {
+      folder: restoreFolder,
+      previousFolder: null,
+      spamReason: null,
+      spamScore: null,
+      spamFlags: null,
+    },
+  });
+
+  await triggerSidebarEvents("not-spam", { userId: user.id, restoredTo: restoreFolder });
+  revalidatePath("/email");
+
+  return { success: true, folder: restoreFolder };
+}
+
+// Backward compatible (if you still call it somewhere)
+export async function reportNotSpamAction(emailIdOrRecipientId: string) {
+  return reportNotSpamByEmailIdAction(emailIdOrRecipientId);
 }
 
 // =========================================================
@@ -565,20 +800,12 @@ export async function updateEmailStarStatusAction(ids: string[], isStarred: bool
 
     await prisma.$transaction(async (tx) => {
       const recipientResult = await tx.emailRecipient.updateMany({
-        where: {
-          userId: user.id,
-          id: { in: ids },
-          folder: { notIn: ["trash", "spam"] },
-        },
+        where: { userId: user.id, id: { in: ids }, folder: { notIn: ["trash", "spam"] } },
         data: { isStarred },
       });
 
       const sentResult = await tx.email.updateMany({
-        where: {
-          senderId: user.id,
-          id: { in: ids },
-          senderFolder: { notIn: ["trash", "spam"] },
-        },
+        where: { senderId: user.id, id: { in: ids }, senderFolder: { notIn: ["trash", "spam"] } },
         data: { isStarred },
       });
 
@@ -616,11 +843,7 @@ export async function updateEmailReadStatusAction(ids: string[], isRead: boolean
 
   try {
     const result = await prisma.emailRecipient.updateMany({
-      where: {
-        userId: user.id,
-        id: { in: ids },
-        isRead: !isRead,
-      },
+      where: { userId: user.id, id: { in: ids }, isRead: !isRead },
       data: { isRead },
     });
 
@@ -648,15 +871,10 @@ export async function markEmailAsReadByEmailIdAction(emailId: string) {
   if (!user) throw new Error("Unauthorized");
 
   const result = await prisma.emailRecipient.updateMany({
-    where: {
-      userId: user.id,
-      emailId,
-      isRead: false,
-    },
+    where: { userId: user.id, emailId, isRead: false },
     data: { isRead: true },
   });
 
-  // refresh sidebar + realtime
   await triggerSidebarEvents("read", {
     ids: [emailId],
     count: result.count,
@@ -667,16 +885,13 @@ export async function markEmailAsReadByEmailIdAction(emailId: string) {
   return { success: true, updatedCount: result.count };
 }
 
-// ✅ Detail-page helper: toggle read/unread using Email ID (not recipient row id)
+// ✅ Detail-page helper: toggle read/unread using Email ID
 export async function toggleReadByEmailIdAction(emailId: string, isRead: boolean) {
   const { user } = await getCurrentSession();
   if (!user) throw new Error("Unauthorized");
 
   const result = await prisma.emailRecipient.updateMany({
-    where: {
-      userId: user.id,
-      emailId,
-    },
+    where: { userId: user.id, emailId },
     data: { isRead },
   });
 
@@ -742,21 +957,14 @@ export async function getSidebarCountsAction() {
       where: { userId, isStarred: true, folder: { notIn: ["trash", "spam"] } },
     }),
     prisma.email.count({
-      where: {
-        senderId: userId,
-        isStarred: true,
-        senderFolder: { notIn: ["trash", "spam", "deleted"] },
-      },
+      where: { senderId: userId, isStarred: true, senderFolder: { notIn: ["trash", "spam", "deleted"] } },
     }),
 
     prisma.emailRecipient.count({
       where: { userId, folder: { notIn: ["trash", "spam"] } },
     }),
     prisma.email.count({
-      where: {
-        senderId: userId,
-        senderFolder: { notIn: ["trash", "spam", "drafts", "deleted"] },
-      },
+      where: { senderId: userId, senderFolder: { notIn: ["trash", "spam", "drafts", "deleted"] } },
     }),
   ]);
 

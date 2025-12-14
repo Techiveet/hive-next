@@ -118,30 +118,41 @@ enum RecipientType {
 }
 
 model EmailRecipient {
-  id String @id @default(uuid())
-  
-  emailId String
-  email   Email  @relation(fields: [emailId], references: [id], onDelete: Cascade)
-  
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-  
-  isRead    Boolean        @default(false)
-  isStarred Boolean        @default(false) 
-  folder    String         @default("inbox")
-  type      RecipientType  @default(TO)
-  
-  createdAt DateTime @default(now())
+  id String @id @default(uuid())
 
-  @@unique([emailId, userId])
-  // ⚡ CRITICAL INDEXES FOR PERFORMANCE
-  @@index([userId, folder, isRead, createdAt(desc)])
-  @@index([userId, folder, isStarred, createdAt(desc)])
-  @@index([userId, folder, createdAt(desc)])
-  @@index([userId, isRead])
-  @@index([emailId])
-  @@index([createdAt(desc)])
+  emailId String
+  email   Email  @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  isRead    Boolean       @default(false)
+  isStarred Boolean       @default(false)
+  folder    String        @default("inbox")
+  type      RecipientType @default(TO)
+
+  // ✅ Spam metadata (optional but used by your code)
+  previousFolder String?     // e.g. "inbox"
+  spamReason     String?     @db.Text
+  spamScore      Float?
+  spamFlags      Json?
+
+  createdAt DateTime @default(now())
+
+  @@unique([emailId, userId])
+
+  // ⚡ indexes
+  @@index([userId, folder, isRead, createdAt(desc)])
+  @@index([userId, folder, isStarred, createdAt(desc)])
+  @@index([userId, folder, createdAt(desc)])
+  @@index([userId, isRead])
+  @@index([emailId])
+  @@index([createdAt(desc)])
+
+  // ✅ spam queries
+  @@index([userId, folder, spamScore])
 }
+
 
 // Attachment type
 enum AttachmentType {

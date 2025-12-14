@@ -7,15 +7,12 @@ import DOMPurify from "isomorphic-dompurify";
 import { EmailDetailToolbar } from "./email-detail-toolbar";
 import { EmailListContainer } from "../_components/email-list-container";
 import { EmailReplyActions } from "./email-actions-bar";
+import { SpamNotice } from "./spam-notice"; // ✅ NEW
 import { Suspense } from "react";
 import { autoDecryptAction } from "../server-decryption-action";
 import { getCurrentSession } from "@/lib/auth-server";
 import { prisma } from "@/lib/prisma";
 
-// 1. IMPORT THE CONTAINER
-
-
-// Skeleton for the sidebar
 function EmailListLoading() {
   return (
     <div className="h-full w-full lg:w-[380px] min-w-0">
@@ -47,20 +44,47 @@ export default async function EmailDetailPage(props: {
   const searchQuery = searchParams.q || "";
   const cursor = searchParams.cursor || null;
 
-  // --- 1. Fetch Email Detail (Logic remains same) ---
+  // ✅ Fetch Email Detail WITH spam fields on recipients
   const email = await prisma.email.findUnique({
     where: { id: params.id },
-    include: {
+    select: {
+      id: true,
+      subject: true,
+      body: true,
+      senderId: true,
+      senderFolder: true,
+      isE2EE: true,
+      isStarred: true,
+      createdAt: true,
+
       sender: {
         select: { id: true, name: true, email: true, image: true },
       },
+
       recipients: {
-        include: {
+        select: {
+          id: true,
+          userId: true,
+          isRead: true,
+          isStarred: true,
+          folder: true,
+          type: true,
+
+          // ✅ spam meta (from your prisma update)
+          previousFolder: true,
+          spamReason: true,
+          spamScore: true,
+          spamFlags: true,
+
           user: { select: { id: true, name: true, email: true, image: true } },
         },
       },
+
       attachments: {
-        include: { file: true },
+        select: {
+          id: true,
+          file: { select: { id: true, name: true, mimeType: true, url: true, size: true } },
+        },
       },
     },
   });
@@ -77,37 +101,46 @@ export default async function EmailDetailPage(props: {
         <div className="text-center p-8 max-w-md">
           <h2 className="text-xl font-semibold">Access Denied</h2>
           <p className="text-slate-500 mb-4">You don't have permission to view this email.</p>
-          <a href={`/email?folder=${folder}`} className="text-emerald-600 font-medium">Return to {folder}</a>
+          <a href={`/email?folder=${folder}`} className="text-emerald-600 font-medium">
+            Return to {folder}
+          </a>
         </div>
       </div>
     );
   }
 
-  const isReadForToolbar = isSender ? true : Boolean((myRecipientRecord as any)?.isRead);
+  const isReadForToolbar = isSender ? true : Boolean(myRecipientRecord?.isRead);
 
   // Decryption Logic
   let finalSubject = email.subject || "";
   let finalBody = email.body || "";
   let decryptionError: string | null = null;
 
-  if ((email as any).isE2EE) {
+  if (email.isE2EE) {
     try {
       const [decryptedBody, decryptedSubject] = await Promise.all([
         autoDecryptAction(email.body || ""),
         autoDecryptAction(email.subject || ""),
       ]);
-      finalBody = DOMPurify.sanitize(decryptedBody || "", { ADD_TAGS: ["iframe"], ADD_ATTR: ["src"] });
-      finalSubject = DOMPurify.sanitize(decryptedSubject, { ALLOWED_TAGS: [] });
+
+      finalBody = DOMPurify.sanitize(decryptedBody || "", {
+        ADD_TAGS: ["iframe"],
+        ADD_ATTR: ["src"],
+      });
+
+      finalSubject = DOMPurify.sanitize(decryptedSubject || "", { ALLOWED_TAGS: [] });
     } catch (e: any) {
       decryptionError = e.message;
       finalSubject = email.subject || "(Encrypted)";
       finalBody = "Decryption failed.";
     }
   } else {
-    finalBody = DOMPurify.sanitize(email.body || "", { ADD_TAGS: ["iframe"], ADD_ATTR: ["src"] });
+    finalBody = DOMPurify.sanitize(email.body || "", {
+      ADD_TAGS: ["iframe"],
+      ADD_ATTR: ["src"],
+    });
   }
 
-  // Attachments
   const detailAttachments = (email.attachments ?? []).map((att: any) => ({
     id: att.id,
     type: att.file?.mimeType?.startsWith("image/") ? "IMAGE" : "FILE",
@@ -119,18 +152,15 @@ export default async function EmailDetailPage(props: {
 
   const users = await prisma.user.findMany({ select: { id: true, name: true, email: true } });
 
+  const isSpamDetail =
+    folder === "spam" && !isSender && myRecipientRecord?.folder === "spam";
+
   return (
     <>
       {/* LEFT: Sidebar List */}
-      {/* 2. REPLACED LOCAL FUNCTION WITH ROBUST CONTAINER */}
       <div className="hidden lg:block h-full w-[380px] min-w-0 border-r border-slate-200 dark:border-slate-800 print:hidden">
         <Suspense fallback={<EmailListLoading />}>
-          <EmailListContainer
-            folder={folder}
-            cursor={cursor} // Passes scroll position
-            pageSize={10}
-            searchQuery={searchQuery}
-          />
+          <EmailListContainer folder={folder} cursor={cursor} pageSize={10} searchQuery={searchQuery} />
         </Suspense>
       </div>
 
@@ -147,6 +177,19 @@ export default async function EmailDetailPage(props: {
 
           <div className="flex-1 p-6">
             <div className="max-w-4xl mx-auto">
+              {/* ✅ Gmail-like Spam banner */}
+              {isSpamDetail && myRecipientRecord && (
+                <div className="mb-5 print:hidden">
+                  <SpamNotice
+                    emailId={email.id}
+                    previousFolder={myRecipientRecord.previousFolder ?? "inbox"}
+                    spamReason={myRecipientRecord.spamReason}
+                    spamScore={myRecipientRecord.spamScore}
+                    spamFlags={myRecipientRecord.spamFlags}
+                  />
+                </div>
+              )}
+
               <div className="mb-6">
                 <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-white mb-4">
                   {finalSubject}
@@ -180,11 +223,7 @@ export default async function EmailDetailPage(props: {
                 </div>
 
                 <div className="mb-6 print:hidden">
-                  <EmailReplyActions
-                    email={email}
-                    users={users}
-                    currentUserId={user.id}
-                  />
+                  <EmailReplyActions email={email} users={users} currentUserId={user.id} />
                 </div>
               </div>
 
@@ -203,12 +242,16 @@ export default async function EmailDetailPage(props: {
 
               {detailAttachments.length > 0 && (
                 <div className="mt-8 border-t border-slate-200 dark:border-slate-800 pt-6">
-                  <h3 className="font-semibold mb-4">Attachments ({detailAttachments.length})</h3>
+                  <h3 className="font-semibold mb-4">
+                    Attachments ({detailAttachments.length})
+                  </h3>
                   <div className="grid gap-3">
                     {detailAttachments.map((att: any) => (
                       <div key={att.id} className="flex items-center justify-between p-3 border rounded-lg">
                         <span className="font-medium">{att.name}</span>
-                        <a href={att.url} target="_blank" className="text-emerald-600 text-sm">Download</a>
+                        <a href={att.url} target="_blank" className="text-emerald-600 text-sm">
+                          Download
+                        </a>
                       </div>
                     ))}
                   </div>
