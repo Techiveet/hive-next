@@ -292,7 +292,7 @@ export function EmailList({
   pageSize = 10,
   searchQuery: initialSearch = "",
   nextCursor,
-  totalCount = 0,
+  totalCount,
   enablePagination = true,
 }: EmailListProps) {
   const router = useRouter();
@@ -308,7 +308,12 @@ export function EmailList({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isPending, startTransition] = useTransition();
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalEmails, setTotalEmails] = useState(totalCount);
+
+  // ✅ IMPORTANT: don’t default to 0 if server didn’t pass totalCount
+  const [totalEmails, setTotalEmails] = useState<number>(
+    typeof totalCount === "number" ? totalCount : initialEmails.length
+  );
+
   const [cursorHistory, setCursorHistory] = useState<string[]>([]);
 
   const searchTimeoutRef = useRef<NodeJS.Timeout>();
@@ -316,21 +321,35 @@ export function EmailList({
 
   const activeEmailId = (params as any)?.id ?? null;
 
+  // ✅ Robust range label (works even if totalCount is missing)
   const pageRange = useMemo(() => {
     if (!enablePagination) {
       return `${emails.length} email${emails.length === 1 ? "" : "s"}`;
     }
-    if (totalEmails === 0) return "0-0 of 0";
+
     const start = (currentPage - 1) * pageSize + 1;
-    const end = Math.min(currentPage * pageSize, totalEmails);
-    return `${start}-${end} of ${totalEmails.toLocaleString()}`;
+    const end = (currentPage - 1) * pageSize + emails.length;
+
+    // If totalEmails unknown (0) but we still have items, show a meaningful count
+    const effectiveTotal =
+      totalEmails > 0 ? totalEmails : emails.length > 0 ? end : 0;
+
+    if (effectiveTotal === 0) return "0-0 of 0";
+
+    const safeStart = emails.length === 0 ? 0 : start;
+    const safeEnd = emails.length === 0 ? 0 : Math.min(end, effectiveTotal);
+
+    return `${safeStart}-${safeEnd} of ${effectiveTotal.toLocaleString()}`;
   }, [enablePagination, currentPage, pageSize, totalEmails, emails.length]);
 
   useEffect(() => {
     setEmails(initialEmails);
     setCursor(nextCursor ?? null);
     setHasMore(!!nextCursor);
-    setTotalEmails(totalCount);
+
+    // ✅ keep totalCount if provided, otherwise fallback to initialEmails length
+    setTotalEmails(typeof totalCount === "number" ? totalCount : initialEmails.length);
+
     setCurrentPage(1);
     setCursorHistory([]);
     setSearchQuery(initialSearch);
@@ -368,11 +387,20 @@ export function EmailList({
         const { data } = await response.json();
         if (!data) throw new Error("No data returned");
 
-        setEmails(data.items);
+        setEmails(data.items || []);
         setCursor(data.nextCursor ?? null);
         setHasMore(!!data.hasNextPage);
         setCurrentPage(pageNum);
-        setTotalEmails(data.totalCount || 0);
+
+        // ✅ DO NOT overwrite totalEmails with 0 if API didn’t send it
+        if (typeof data.totalCount === "number") {
+          setTotalEmails(data.totalCount);
+        } else if (typeof data.totalCount === "string" && !Number.isNaN(Number(data.totalCount))) {
+          setTotalEmails(Number(data.totalCount));
+        } else {
+          // keep existing totalEmails (don’t kill it)
+          setTotalEmails((prev) => prev);
+        }
 
         if (cursorParam) {
           setCursorHistory((prev) =>
@@ -384,8 +412,7 @@ export function EmailList({
         newParams.set("folder", folderName);
         if (cursorParam) newParams.set("cursor", cursorParam);
         if (search.trim()) newParams.set("q", search.trim());
-      router.replace(`/email?${newParams.toString()}`, { scroll: false });
-
+        router.replace(`/email?${newParams.toString()}`, { scroll: false });
 
         if (scrollContainerRef.current) {
           scrollContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
@@ -400,7 +427,7 @@ export function EmailList({
         setLoading(false);
       }
     },
-    [folderName, pageSize, enablePagination]
+    [folderName, pageSize, enablePagination, router]
   );
 
   const loadPreviousPage = useCallback(() => {
@@ -453,21 +480,18 @@ export function EmailList({
     );
   }, []);
 
-  // Handle star toggle with event triggering
   const handleToggleStar = useCallback((id: string, currentStatus: boolean) => {
     const newStatus = !currentStatus;
     const emailItem = emails.find(e => e.id === id);
-    
-    // Optimistic update
+
     setEmails((prev) =>
       prev.map((e) => (e.id === id ? { ...e, isStarred: newStatus } : e))
     );
-    
+
     startTransition(async () => {
       try {
         const result = await updateEmailStarStatusAction([id], newStatus);
-        
-        // Trigger events for sidebar update
+
         if (typeof window !== 'undefined') {
           const eventName = newStatus ? 'email-starred' : 'email-unstarred';
           window.dispatchEvent(new CustomEvent(eventName, {
@@ -475,12 +499,9 @@ export function EmailList({
           }));
           window.dispatchEvent(new CustomEvent('refresh-sidebar-counts'));
         }
-        
-        if (result.message) {
-          toast.success(result.message);
-        }
+
+        if (result.message) toast.success(result.message);
       } catch {
-        // Revert optimistic update
         setEmails((prev) =>
           prev.map((e) => (e.id === id ? { ...e, isStarred: currentStatus } : e))
         );
@@ -489,7 +510,6 @@ export function EmailList({
     });
   }, [emails]);
 
-  // Handle bulk actions
   const handleBulkAction = useCallback(
     async (
       action: "delete" | "archive" | "markRead" | "markUnread" | "spam"
@@ -497,17 +517,14 @@ export function EmailList({
       if (selectedIds.length === 0) return;
 
       const selectedItems = emails.filter((e) => selectedIds.includes(e.id));
-      
-      // Store for optimistic update
       const affectedEmails = [...selectedItems];
-      
-      // Optimistic update
+
       setEmails((prev) => prev.filter((e) => !selectedIds.includes(e.id)));
       setSelectedIds([]);
 
       startTransition(async () => {
         try {
-          let result;
+          let result: any;
           switch (action) {
             case "delete":
               result = await deleteEmailsAction(selectedIds, folderName);
@@ -526,12 +543,8 @@ export function EmailList({
               break;
           }
 
-          // Show success message
-          if (result?.message) {
-            toast.success(result.message);
-          }
+          if (result?.message) toast.success(result.message);
 
-          // Trigger sidebar refresh
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('refresh-sidebar-counts'));
             window.dispatchEvent(new CustomEvent('email-action-completed', {
@@ -539,7 +552,6 @@ export function EmailList({
             }));
           }
 
-          // Refresh data
           if (enablePagination) {
             setTimeout(() => {
               fetchEmails(null, searchQuery, 1);
@@ -548,7 +560,6 @@ export function EmailList({
             router.refresh();
           }
         } catch (error) {
-          // Revert optimistic update
           setEmails((prev) => {
             const remaining = prev.filter((e) => !selectedIds.includes(e.id));
             return [...affectedEmails, ...remaining].sort(
@@ -564,33 +575,28 @@ export function EmailList({
     [selectedIds, folderName, emails, searchQuery, fetchEmails, enablePagination, router]
   );
 
- 
-
-const handleRowClick = useCallback(
-  (emailId: string) => {
-    // ✅ Drafts open the compose modal (edit mode) instead of detail page
-    if (folderName === "drafts") {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("open-draft-compose", {
-            detail: { draftId: emailId },
-          })
-        );
+  const handleRowClick = useCallback(
+    (emailId: string) => {
+      if (folderName === "drafts") {
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("open-draft-compose", {
+              detail: { draftId: emailId },
+            })
+          );
+        }
+        return;
       }
-      return;
-    }
 
-    // normal folders -> detail page
-    const detailParams = new URLSearchParams();
-    detailParams.set("folder", folderName);
-    if (searchQuery) detailParams.set("q", searchQuery);
-    const currentCursor = searchParams.get("cursor");
-    if (currentCursor) detailParams.set("cursor", currentCursor);
-    router.push(`/email/${emailId}?${detailParams.toString()}`);
-  },
-  [router, folderName, searchQuery, searchParams]
-);
-
+      const detailParams = new URLSearchParams();
+      detailParams.set("folder", folderName);
+      if (searchQuery) detailParams.set("q", searchQuery);
+      const currentCursor = searchParams.get("cursor");
+      if (currentCursor) detailParams.set("cursor", currentCursor);
+      router.push(`/email/${emailId}?${detailParams.toString()}`);
+    },
+    [router, folderName, searchQuery, searchParams]
+  );
 
   if (loading && emails.length === 0) {
     return (
