@@ -1,4 +1,4 @@
-//app/(dashboard)/.layout.tsx
+//app/(dashboard)/layout.tsx
 
 import { AppConfigProvider } from "@/components/providers/app-config-provider";
 import { DashboardShell } from "@/components/dashboard-shell";

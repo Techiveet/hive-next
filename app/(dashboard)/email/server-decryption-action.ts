@@ -42,16 +42,17 @@ export async function autoDecryptAction(encryptedText: string) {
     console.log("📝 First 50 chars of encrypted text:", encryptedText.substring(0, 50));
 
     // 2. Decode the Base64-encoded PGP message
-    let armoredMessage: string;
-    try {
-        armoredMessage = atob(encryptedText.trim());
-        console.log("✅ Base64 decoded successfully");
-        console.log("📝 Armored message length:", armoredMessage.length);
-        console.log("📝 Message starts with:", armoredMessage.substring(0, 100));
-    } catch (e) {
-        console.error("❌ Failed to decode Base64");
-        throw new Error("Invalid encrypted message format. Message may be corrupted.");
-    }
+let armoredMessage: string;
+try {
+  armoredMessage = Buffer.from(encryptedText.trim(), "base64").toString("utf8");
+  console.log("✅ Base64 decoded successfully");
+  console.log("📝 Armored message length:", armoredMessage.length);
+  console.log("📝 Message starts with:", armoredMessage.substring(0, 100));
+} catch (e) {
+  console.error("❌ Failed to decode Base64 using Buffer");
+  throw new Error("Invalid encrypted message format. Message may be corrupted.");
+}
+
 
     try {
         // 3. Read and Decrypt the Private Key

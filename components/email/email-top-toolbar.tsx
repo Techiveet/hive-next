@@ -2,7 +2,7 @@
 "use client";
 
 import { Archive, Inbox, Trash2 } from "lucide-react";
-import { archiveEmailsAction, deleteEmailsAction } from "@/app/actions/email-actions";
+import { archiveEmailsAction, deleteEmailsAction } from "@/app/(dashboard)/email/email-actions";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

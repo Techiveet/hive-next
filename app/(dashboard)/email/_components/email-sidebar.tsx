@@ -1,4 +1,3 @@
-//app/(dashboard)/email/_components/email-sidebar.tsx
 "use client";
 
 import {
@@ -7,17 +6,18 @@ import {
   Inbox,
   LayoutGrid,
   Send,
+  ShieldAlert,
   Star,
   Trash2
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { getSidebarCountsAction } from "../email-actions";
 import { io } from "socket.io-client";
-import { useSearchParams } from "next/navigation";
 
-// Define the shape of our counts
 export type FolderCounts = {
   all: number;
   inbox: number;
@@ -26,6 +26,7 @@ export type FolderCounts = {
   trash: number;
   starred: number;
   archive: number;
+  spam: number;
 };
 
 type EmailSidebarProps = {
@@ -34,110 +35,76 @@ type EmailSidebarProps = {
 };
 
 export function EmailSidebar({ initialCounts, userId }: EmailSidebarProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const activeFolder = searchParams.get("folder") || "inbox";
+  
+  // Initialize state
   const [counts, setCounts] = useState<FolderCounts>(initialCounts);
 
-  // Sync with server updates on navigation
+  // Helper: Fetch fresh counts from DB
+  const refreshCounts = async () => {
+    try {
+      const freshCounts = await getSidebarCountsAction();
+      if (freshCounts) {
+        setCounts(freshCounts);
+      }
+    } catch (err) {
+      console.error("Error refreshing sidebar counts:", err);
+    }
+  };
+
+  // 1. Initial Load & Sync when props change
   useEffect(() => {
     setCounts(initialCounts);
   }, [initialCounts]);
 
-  // Real-time listener
+  // 2. Listen for custom window events (triggered by client-side actions in email-list)
   useEffect(() => {
-    const socket = io("http://localhost:3001");
+    const handleRefresh = () => refreshCounts();
+    window.addEventListener('refresh-sidebar-counts', handleRefresh);
+    return () => window.removeEventListener('refresh-sidebar-counts', handleRefresh);
+  }, []);
+
+  // 3. Socket Listeners for Realtime Updates from other users
+  useEffect(() => {
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || "http://localhost:3001";
+    const socket = io(socketUrl);
+    
     socket.emit("join-room", userId);
 
-    // 1. Incoming Email (Someone sent me mail)
-    socket.on("new-email", () => {
-      setCounts((prev) => ({
-        ...prev,
-        inbox: prev.inbox + 1,
-        all: prev.all + 1,
-      }));
-    });
+    const handleUpdate = () => {
+      startTransition(() => {
+        refreshCounts();
+        router.refresh(); 
+      });
+    };
 
-    // 2. Outgoing Email (I sent mail)
-    socket.on("email-sent", () => {
-      setCounts((prev) => ({
-        ...prev,
-        sent: prev.sent + 1,
-        all: prev.all + 1,
-      }));
-    });
-
-    // 3. Optional: Handle Trash/Delete events if you implement them
-    // socket.on("email-deleted", () => { ... });
-
+    socket.on("new-email", handleUpdate);
+    socket.on("email-sent", handleUpdate);
+    
     return () => {
       socket.disconnect();
     };
-  }, [userId]);
+  }, [userId, router]);
 
   const navItems = [
-    { 
-      label: "All Mails", 
-      icon: LayoutGrid, 
-      id: "all", 
-      count: counts.all, 
-      color: "text-indigo-600 dark:text-indigo-400" 
-    },
-    { 
-      label: "Inbox", 
-      icon: Inbox, 
-      id: "inbox", 
-      count: counts.inbox, 
-      color: "text-pink-600 dark:text-pink-400" // Matches screenshot pink
-    },
-    { 
-      label: "Sent", 
-      icon: Send, 
-      id: "sent", 
-      count: counts.sent, 
-      color: "text-emerald-500 dark:text-emerald-400" 
-    },
-    { 
-      label: "Drafts", 
-      icon: File, 
-      id: "drafts", 
-      count: counts.drafts, 
-      color: "text-blue-500 dark:text-blue-400"
-    },
-    { 
-      label: "Archived", 
-      icon: Archive, 
-      id: "archive", 
-      count: counts.archive, 
-      color: "text-slate-500"
-    },
-    { 
-      label: "Starred", 
-      icon: Star, 
-      id: "starred", 
-      count: counts.starred, 
-      color: "text-amber-500"
-    },
-    { 
-      label: "Trash", 
-      icon: Trash2, 
-      id: "trash", 
-      count: counts.trash, 
-      color: "text-red-500"
-    },
+    { label: "All Mails", icon: LayoutGrid, id: "all", count: counts.all, color: "text-indigo-600 dark:text-indigo-400" },
+    { label: "Inbox", icon: Inbox, id: "inbox", count: counts.inbox, color: "text-pink-600 dark:text-pink-400" },
+    { label: "Sent", icon: Send, id: "sent", count: counts.sent, color: "text-emerald-500 dark:text-emerald-400" },
+    { label: "Drafts", icon: File, id: "drafts", count: counts.drafts, color: "text-blue-500 dark:text-blue-400" },
+    { label: "Archived", icon: Archive, id: "archive", count: counts.archive, color: "text-slate-500" },
+    { label: "Starred", icon: Star, id: "starred", count: counts.starred, color: "text-amber-500" },
+    { label: "Spam", icon: ShieldAlert, id: "spam", count: counts.spam, color: "text-orange-600 dark:text-orange-400" },
+    { label: "Trash", icon: Trash2, id: "trash", count: counts.trash, color: "text-red-500" },
   ];
 
   return (
     <div className="flex h-full flex-col rounded-xl bg-white shadow-sm border border-slate-200 dark:bg-slate-950 dark:border-slate-800 overflow-hidden">
-      
-      {/* Header Area */}
       <div className="p-6 pb-2">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-          Mails
-        </h3>
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Mails</h3>
       </div>
-
-      {/* Navigation Links */}
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="flex-1 space-y-1 p-3 overflow-y-auto">
         {navItems.map((item) => {
           const isActive = activeFolder === item.id;
           return (
@@ -152,23 +119,11 @@ export function EmailSidebar({ initialCounts, userId }: EmailSidebarProps) {
               )}
             >
               <div className="flex items-center gap-3">
-                <item.icon
-                  className={cn(
-                    "h-[18px] w-[18px]",
-                    isActive ? "text-slate-900 dark:text-white" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300"
-                  )}
-                />
+                <item.icon className={cn("h-[18px] w-[18px]", isActive ? "text-slate-900 dark:text-white" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300")} />
                 <span>{item.label}</span>
               </div>
-              
-              {/* Counter Badge */}
               {item.count > 0 && (
-                <span
-                  className={cn(
-                    "text-xs font-bold transition-transform group-hover:scale-110",
-                    item.color
-                  )}
-                >
+                <span className={cn("text-xs font-bold transition-transform group-hover:scale-110", item.color)}>
                   {item.count}
                 </span>
               )}

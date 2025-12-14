@@ -4,7 +4,8 @@ import { ImageResponse } from "next/og";
 import { getBrandForRequest } from "@/lib/brand-server";
 import { headers } from "next/headers";
 
-export const runtime = "nodejs";
+// CHANGE: Use 'edge' runtime instead of 'nodejs'
+export const runtime = "edge";
 export const dynamic = "force-dynamic";
 
 export const size = {
@@ -90,17 +91,29 @@ export default async function Icon() {
   } catch (error) {
     console.error("[Icon Generation Error]", error);
 
-    // Emergency black circle
+    // Emergency fallback - return a simple ImageResponse
     return new ImageResponse(
       (
         <div
           style={{
-            background: "#000",
+            background: "linear-gradient(to bottom right, #4f46e5, #9333ea)",
             width: "100%",
             height: "100%",
-            borderRadius: "50%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
           }}
-        />
+        >
+          <div
+            style={{
+              fontSize: 16,
+              color: "white",
+              fontWeight: 700,
+            }}
+          >
+            H
+          </div>
+        </div>
       ),
       { ...size }
     );

@@ -14,18 +14,26 @@ import {
   RichEditorUploadedFile,
   RichTextEditor,
 } from "@/components/ui/rich-text-editor";
-import { getPublicKeysAction, getSenderPublicKeyAction } from "../encryption-actions";
+import {
+  getPublicKeysAction,
+  getSenderPublicKeyAction,
+} from "../encryption-actions";
+import {
+  saveDraftAction,
+  sendEmailAction,
+  updateDraftAction
+} from "../email-actions";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { pgpEncrypt } from "@/lib/pgp-utils";
-import { sendEmailAction } from "../email-actions";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
-// UPDATED IMPORT
-
-
+// -----------------------------------------------------------------------------
+// RECIPIENT INPUT COMPONENT
+// -----------------------------------------------------------------------------
 function RecipientInput({
   label,
   users,
@@ -77,8 +85,11 @@ function RecipientInput({
               e.target.value = "";
             }}
           >
-            {/* FIX: Added key to the static option element */}
-            <option key="add-recipient-placeholder" value="" className="dark:text-slate-800">
+            <option
+              key="add-recipient-placeholder"
+              value=""
+              className="dark:text-slate-800"
+            >
               + Add recipient
             </option>
             {availableUsers.map((u: any) => (
@@ -93,8 +104,11 @@ function RecipientInput({
   );
 }
 
+// -----------------------------------------------------------------------------
+// TYPES
+// -----------------------------------------------------------------------------
 type ComposeAttachment = {
-  id: string;
+  id: string; // ✅ fileId
   type: "IMAGE" | "VIDEO" | "FILE";
   url: string;
   name: string;
@@ -129,11 +143,17 @@ export function ComposeDialog({
   open,
   onOpenChange,
 }: ComposeDialogProps) {
+  const router = useRouter();
+
   const [internalOpen, setInternalOpen] = useState(false);
   const isOpen = open ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
   const [isPending, startTransition] = useTransition();
 
+  // ✅ Draft Edit Mode
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+
+  // Form State
   const [toIds, setToIds] = useState<string[]>([]);
   const [ccIds, setCcIds] = useState<string[]>([]);
   const [bccIds, setBccIds] = useState<string[]>([]);
@@ -141,21 +161,24 @@ export function ComposeDialog({
   const [body, setBody] = useState("");
   const [showCcBcc, setShowCcBcc] = useState(false);
 
+  // Encryption State
   const [isE2EE, setIsE2EE] = useState(false);
-  const [recipientPublicKeys, setRecipientPublicKeys] = useState<{ [key: string]: string }>({});
+  const [recipientPublicKeys, setRecipientPublicKeys] = useState<{
+    [key: string]: string;
+  }>({});
 
+  // Attachments & Image Editor
   const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
-
   const [imageEditorOpen, setImageEditorOpen] = useState(false);
   const [imageEditorState, setImageEditorState] = useState<ImageEditorState | null>(null);
   const [imageEditorEditor, setImageEditorEditor] = useState<any>(null);
 
+  // --- Helpers ---
   const registerAttachment = (
     file: RichEditorUploadedFile,
     kind: ComposeAttachment["type"]
   ) => {
     if (!file.id) return;
-
     setAttachments((prev) => {
       if (prev.some((a) => a.id === file.id)) return prev;
       return [
@@ -170,112 +193,192 @@ export function ComposeDialog({
       ];
     });
   };
-  
+
   const allRecipientIds = useMemo(() => {
-      return Array.from(new Set([...toIds, ...ccIds, ...bccIds]));
+    return Array.from(new Set([...toIds, ...ccIds, ...bccIds]));
   }, [toIds, ccIds, bccIds]);
 
+  // ✅ Load draft into composer
+  const loadDraftIntoComposer = async (draftId: string) => {
+    const res = await fetch(`/api/emails/drafts/${draftId}`, { cache: "no-store" });
+    const json = await res.json();
+    if (!res.ok || !json?.data) throw new Error(json?.error || "Failed to load draft");
+
+    const d = json.data;
+
+    setEditingDraftId(draftId);
+
+    // If you don't store recipients in draft schema, keep empty (or adapt later)
+    setToIds(d.toIds ?? []);
+    setCcIds(d.ccIds ?? []);
+    setBccIds(d.bccIds ?? []);
+    setShowCcBcc(!!((d.ccIds?.length || 0) + (d.bccIds?.length || 0)));
+
+    setSubject(d.subject ?? "");
+    setBody(d.body ?? "");
+
+    setAttachments(
+      (d.attachments ?? [])
+        .filter((a: any) => a?.id)
+        .map((a: any) => ({
+          id: a.id, // ✅ fileId
+          url: a.url || "",
+          name: a.name || "Attachment",
+          mimeType: a.mimeType ?? null,
+          type: a.type || "FILE",
+        }))
+    );
+
+    // Reset encryption calc on open
+    setIsE2EE(false);
+    setRecipientPublicKeys({});
+  };
+
+  // --- Effects ---
   useEffect(() => {
     if (allRecipientIds.length === 0) {
-        setRecipientPublicKeys({});
-        setIsE2EE(false);
-        return;
+      setRecipientPublicKeys({});
+      setIsE2EE(false);
+      return;
     }
-    
-    getPublicKeysAction(allRecipientIds).then(results => {
-        const keyMap = results.reduce((acc, user) => {
-            if (user.pgpPublicKey) {
-                acc[user.id] = user.pgpPublicKey;
-            }
-            return acc;
-        }, {} as { [key: string]: string });
-        
-        setRecipientPublicKeys(keyMap);
-        
-        const allHaveKeys = allRecipientIds.every(id => keyMap[id]);
-        setIsE2EE(allHaveKeys);
+
+    getPublicKeysAction(allRecipientIds).then((results) => {
+      const keyMap = results.reduce(
+        (acc, user) => {
+          if (user.pgpPublicKey) {
+            acc[user.id] = user.pgpPublicKey;
+          }
+          return acc;
+        },
+        {} as { [key: string]: string }
+      );
+
+      setRecipientPublicKeys(keyMap);
+      const allHaveKeys = allRecipientIds.every((id) => keyMap[id]);
+      setIsE2EE(allHaveKeys);
     });
   }, [allRecipientIds]);
 
+  // ✅ Listen for Draft click event from email-list
+  useEffect(() => {
+    const handler = async (e: any) => {
+      try {
+        const draftId = e?.detail?.draftId;
+        if (!draftId) return;
+
+        setOpen(true);
+        await loadDraftIntoComposer(draftId);
+      } catch (err: any) {
+        console.error(err);
+        toast.error(err?.message || "Failed to open draft");
+      }
+    };
+
+    window.addEventListener("open-draft-compose", handler);
+    return () => window.removeEventListener("open-draft-compose", handler);
+  }, [setOpen]);
+
+  // Normal open (Compose button / defaultValues)
   useEffect(() => {
     if (!isOpen) return;
 
     const initialToIds =
       defaultValues?.toIds ?? (defaultValues?.toId ? [defaultValues.toId] : []);
 
-    setToIds(initialToIds ?? []);
-    setCcIds(defaultValues?.ccIds ?? []);
-    setBccIds(defaultValues?.bccIds ?? []);
-    setSubject(defaultValues?.subject ?? "");
-    setBody(defaultValues?.body ?? "");
-    setShowCcBcc(
-      !!(defaultValues?.ccIds?.length || defaultValues?.bccIds?.length)
-    );
-    setAttachments(defaultValues?.attachments ?? []);
-    
+    // If opened normally (not via draft event), clear draft edit mode
+    if (!defaultValues && !editingDraftId) {
+      setEditingDraftId(null);
+    }
+
+    // Only apply defaultValues when provided
+    if (defaultValues) {
+      setToIds(initialToIds ?? []);
+      setCcIds(defaultValues?.ccIds ?? []);
+      setBccIds(defaultValues?.bccIds ?? []);
+      setSubject(defaultValues?.subject ?? "");
+      setBody(defaultValues?.body ?? "");
+      setShowCcBcc(
+        !!(defaultValues?.ccIds?.length || defaultValues?.bccIds?.length)
+      );
+      setAttachments(defaultValues?.attachments ?? []);
+    } else if (!editingDraftId) {
+      // brand new compose
+      setToIds([]);
+      setCcIds([]);
+      setBccIds([]);
+      setSubject("");
+      setBody("");
+      setShowCcBcc(false);
+      setAttachments([]);
+    }
+
     setIsE2EE(false);
     setRecipientPublicKeys({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultValues, isOpen]);
 
-  const handleSend = async () => { 
-    if (toIds.length === 0) {
-      return toast.error("Add at least one recipient");
-    }
-    if (!subject.trim()) {
-      return toast.error("Subject is required");
-    }
+  const resetForm = () => {
+    setEditingDraftId(null);
+    setToIds([]);
+    setCcIds([]);
+    setBccIds([]);
+    setSubject("");
+    setBody("");
+    setShowCcBcc(false);
+    setAttachments([]);
+    setIsE2EE(false);
+    setRecipientPublicKeys({});
+  };
+
+  // --- Handlers ---
+  const handleSend = async () => {
+    if (toIds.length === 0) return toast.error("Add at least one recipient");
+    if (!subject.trim()) return toast.error("Subject is required");
 
     let finalBody = body;
     let finalSubject = subject;
     let encryptionStatus = isE2EE;
 
     if (isE2EE) {
-        
-        // 1. Get keys for all recipients (TO, CC, BCC)
-        const recipientKeys = allRecipientIds.map(id => recipientPublicKeys[id]).filter(Boolean);
-        
-        // 2. FIX: Get the SENDER'S public key to allow them to decrypt in the Sent folder
-        const senderKeyResult = await getSenderPublicKeyAction();
-        const senderPublicKey = senderKeyResult?.publicKey;
+      const recipientKeys = allRecipientIds
+        .map((id) => recipientPublicKeys[id])
+        .filter(Boolean);
 
-        if (!senderPublicKey) {
-             toast.warning("Sender's key is missing. Encryption skipped to prevent permanent lock out of 'Sent' email.");
-             // Force encryption status off if sender can't decrypt their own message
-             encryptionStatus = false; 
+      const senderKeyResult = await getSenderPublicKeyAction();
+      const senderPublicKey = senderKeyResult?.publicKey;
+
+      if (!senderPublicKey) {
+        toast.warning(
+          "Sender's key missing. Encryption skipped to prevent lock out of 'Sent' folder."
+        );
+        encryptionStatus = false;
+      }
+
+      const allKeysToEncryptFor = [
+        ...(senderPublicKey ? [senderPublicKey] : []),
+        ...recipientKeys,
+      ];
+
+      if (allKeysToEncryptFor.length === 0 || !encryptionStatus) {
+        encryptionStatus = false;
+      }
+
+      if (encryptionStatus) {
+        try {
+          const encryptedBody = await pgpEncrypt(body, allKeysToEncryptFor);
+          const encryptedSubject = await pgpEncrypt(subject, allKeysToEncryptFor);
+
+          finalBody = btoa(encryptedBody);
+          finalSubject = btoa(encryptedSubject);
+          toast.success("Message encrypted successfully!");
+        } catch (error) {
+          console.error("Encryption Error:", error);
+          toast.warning("Encryption failed. Sending unencrypted.");
+          finalBody = body;
+          finalSubject = subject;
+          encryptionStatus = false;
         }
-
-        const allKeysToEncryptFor = [
-            ...(senderPublicKey ? [senderPublicKey] : []),
-            ...recipientKeys,
-        ];
-        
-        // Final check to ensure we have enough keys
-        if (allKeysToEncryptFor.length === 0 || !encryptionStatus) {
-            encryptionStatus = false;
-        }
-
-
-        if (encryptionStatus) {
-            try {
-                // Encrypt Body and Subject
-                const encryptedBody = await pgpEncrypt(body, allKeysToEncryptFor);
-                const encryptedSubject = await pgpEncrypt(subject, allKeysToEncryptFor);
-                
-                // IMPROVED FORMAT: Base64 encode the PGP block to prevent ALL whitespace corruption 
-                // in transit and database storage.
-                finalBody = btoa(encryptedBody);
-                finalSubject = btoa(encryptedSubject);
-                
-                toast.success("Message encrypted successfully!");
-
-            } catch (error) {
-                console.error("Encryption Error:", error);
-                toast.warning("Encryption failed during PGP process. Sending unencrypted message.");
-                finalBody = body; 
-                finalSubject = subject;
-                encryptionStatus = false;
-            }
-        }
+      }
     }
 
     startTransition(async () => {
@@ -287,37 +390,82 @@ export function ComposeDialog({
         body: finalBody,
         fileIds: attachments.map((a) => a.id),
         isE2EE: encryptionStatus,
+        draftId: editingDraftId ?? undefined, // ✅ optional cleanup on send
       });
 
       toast.success("Sent!");
       setOpen(false);
 
-      setToIds([]);
-      setCcIds([]);
-      setBccIds([]);
-      setSubject("");
-      setBody("");
-      setShowCcBcc(false);
-      setAttachments([]);
-      setIsE2EE(false);
-      setRecipientPublicKeys({});
+      router.refresh();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("refresh-sidebar-counts"));
+      }
+
+      resetForm();
     });
   };
 
+  const handleSaveDraft = async () => {
+    if (
+      !subject.trim() &&
+      !body.trim() &&
+      toIds.length === 0 &&
+      ccIds.length === 0 &&
+      bccIds.length === 0 &&
+      attachments.length === 0
+    ) {
+      setOpen(false);
+      return;
+    }
+
+    startTransition(async () => {
+      if (editingDraftId) {
+        await updateDraftAction({
+          id: editingDraftId,
+          toIds,
+          ccIds,
+          bccIds,
+          subject,
+          body,
+          fileIds: attachments.map((a) => a.id),
+        });
+        toast.success("Draft updated");
+      } else {
+        const res = await saveDraftAction({
+          toIds,
+          ccIds,
+          bccIds,
+          subject,
+          body,
+          fileIds: attachments.map((a) => a.id),
+        });
+
+        // If you want to keep editing the same newly created draft after Save:
+        // setEditingDraftId(res?.id ?? null);
+
+        toast.success("Draft saved");
+      }
+
+      setOpen(false);
+
+      router.refresh();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("refresh-sidebar-counts"));
+      }
+
+      resetForm();
+    });
+  };
+
+  // Image Editor Handlers
   const handleInsertImage = (editorInstance: any) => {
     if (typeof window === "undefined") return;
-
     window.dispatchEvent(
       new CustomEvent("open-file-manager", {
         detail: {
           filter: "images",
           onSelect: (file: RichEditorUploadedFile) => {
-            editorInstance
-              .chain()
-              .focus()
-              .setImage({ src: file.url })
-              .run();
-
+            editorInstance.chain().focus().setImage({ src: file.url }).run();
             registerAttachment(file, "IMAGE");
           },
         },
@@ -340,7 +488,6 @@ export function ComposeDialog({
 
   const applyImageEdits = () => {
     if (!imageEditorEditor || !imageEditorState) return;
-
     imageEditorEditor
       .chain()
       .focus()
@@ -349,7 +496,6 @@ export function ComposeDialog({
         alt: imageEditorState.alt,
       })
       .run();
-
     setImageEditorOpen(false);
   };
 
@@ -360,7 +506,13 @@ export function ComposeDialog({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={setOpen}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) resetForm();
+      }}
+    >
       {trigger === undefined && (
         <DialogTrigger asChild>
           <Button className="w-full justify-center gap-2 h-11 bg-emerald-500 hover:bg-emerald-600 text-white shadow-md font-medium text-base rounded-lg transition-all">
@@ -373,17 +525,17 @@ export function ComposeDialog({
 
       <DialogContent
         className="
-          max-w-none w-[90vw] h-[90vh]  
+          max-w-none w-[90vw] h-[90vh]
           p-0 gap-0
           bg-white dark:bg-slate-900
           border-slate-200 dark:border-slate-800
           overflow-hidden flex flex-col
         "
-        style={{ maxWidth: '90vw' }}
+        style={{ maxWidth: "90vw" }}
       >
         <DialogHeader className="px-5 pt-4 pb-2 border-b border-slate-100 dark:border-slate-800">
           <DialogTitle className="text-slate-900 dark:text-slate-100 text-sm font-semibold">
-            New Message
+            {editingDraftId ? "Edit Draft" : "New Message"}
           </DialogTitle>
         </DialogHeader>
 
@@ -435,10 +587,11 @@ export function ComposeDialog({
 
           <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3 bg-slate-50/20 dark:bg-slate-900/20">
             {isE2EE && (
-                <div className="text-sm text-yellow-600 dark:text-yellow-400 mb-2 border-y border-yellow-200 dark:border-yellow-800 py-1 px-2 bg-yellow-50 dark:bg-yellow-950/50">
-                    E2EE Active: The message content will be encrypted before sending. Attachments are NOT encrypted.
-                </div>
+              <div className="text-sm text-yellow-600 dark:text-yellow-400 mb-2 border-y border-yellow-200 dark:border-yellow-800 py-1 px-2 bg-yellow-50 dark:bg-yellow-950/50">
+                E2EE Active: The message content will be encrypted before sending. Attachments are NOT encrypted.
+              </div>
             )}
+
             <RichTextEditor
               value={body}
               onChange={setBody}
@@ -452,19 +605,18 @@ export function ComposeDialog({
           </div>
 
           <div className="flex-none px-5 py-3 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2 bg-slate-50/60 dark:bg-slate-900/60">
-            
             <div className="flex items-center justify-between">
-                {isE2EE ? (
-                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                        <Lock className="w-3 h-3 fill-emerald-600 dark:fill-emerald-400" />
-                        End-to-End Encryption (PGP) is Active
-                    </span>
-                ) : (
-                    <span className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1.5">
-                        <Lock className="w-3 h-3 text-red-500 dark:text-red-400" />
-                        Encryption Disabled (Missing keys for one or more recipients)
-                    </span>
-                )}
+              {isE2EE ? (
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                  <Lock className="w-3 h-3 fill-emerald-600 dark:fill-emerald-400" />
+                  End-to-End Encryption (PGP) is Active
+                </span>
+              ) : (
+                <span className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1.5">
+                  <Lock className="w-3 h-3 text-red-500 dark:text-red-400" />
+                  Encryption Disabled (Missing keys for one or more recipients)
+                </span>
+              )}
             </div>
 
             {attachments.length > 0 && (
@@ -479,11 +631,28 @@ export function ComposeDialog({
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
+                variant="outline"
+                onClick={handleSaveDraft}
+                disabled={isPending}
+                className="w-28"
+              >
+                {isPending
+                  ? editingDraftId
+                    ? "Updating..."
+                    : "Saving..."
+                  : editingDraftId
+                  ? "Update draft"
+                  : "Save draft"}
+              </Button>
+
+              <Button
+                type="button"
                 variant="ghost"
                 onClick={() => setOpen(false)}
               >
                 Discard
               </Button>
+
               <Button
                 type="button"
                 onClick={handleSend}
@@ -496,6 +665,7 @@ export function ComposeDialog({
           </div>
         </div>
 
+        {/* Image Editor Modal */}
         {imageEditorOpen && imageEditorState && (
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-card text-card-foreground rounded-lg shadow-xl p-4 max-w-xl w-full">
@@ -509,7 +679,6 @@ export function ComposeDialog({
                   Close
                 </button>
               </div>
-
               <div className="max-h-[320px] overflow-auto border rounded-md mb-4 bg-black/5 dark:bg-white/5 flex items-center justify-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -518,7 +687,6 @@ export function ComposeDialog({
                   className="block max-w-full h-auto mx-auto rounded-md"
                 />
               </div>
-
               <div className="space-y-2 mb-4">
                 <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
                   Alt text (for accessibility)
@@ -534,23 +702,12 @@ export function ComposeDialog({
                   className="text-sm"
                 />
               </div>
-
               <div className="flex justify-between items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  type="button"
-                  onClick={removeImage}
-                >
+                <Button variant="outline" size="sm" type="button" onClick={removeImage}>
                   Remove image
                 </Button>
                 <div className="flex gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    onClick={() => setImageEditorOpen(false)}
-                  >
+                  <Button variant="ghost" size="sm" type="button" onClick={() => setImageEditorOpen(false)}>
                     Cancel
                   </Button>
                   <Button size="sm" type="button" onClick={applyImageEdits}>

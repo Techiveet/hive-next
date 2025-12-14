@@ -1,4 +1,4 @@
-//app/(dashboard)/email/[id]/email-actions-bar.tsx
+// app/(dashboard)/email/[id]/email-actions-bar.tsx
 "use client";
 
 import { ArrowLeft, CornerUpLeft, Forward, Trash2 } from "lucide-react";
@@ -24,7 +24,7 @@ export function EmailTopToolbar({ emailId }: { emailId: string }) {
   };
 
   return (
-    <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-slate-800 bg-background/95 backdrop-blur sticky top-0 z-10">
+    <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-slate-800 bg-background/95 backdrop-blur sticky top-0 z-10 print:hidden">
       <Button
         variant="ghost"
         size="sm"
@@ -124,7 +124,8 @@ ${quotedOriginal}
 
   return (
     <>
-      <div className="flex gap-3">
+      {/* 🔒 Hide reply/forward buttons on print */}
+      <div className="flex gap-3 print:hidden">
         <Button
           onClick={() => setReplyOpen(true)}
           className="h-10 gap-2 bg-emerald-500 px-6 text-white hover:bg-emerald-600 shadow-sm"

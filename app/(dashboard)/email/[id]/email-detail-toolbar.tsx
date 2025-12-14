@@ -1,6 +1,3 @@
-
-
-//app/(dashboard)/email/[id]/email-detail-toolbar.tsx
 "use client";
 
 import {
@@ -10,41 +7,84 @@ import {
   Printer,
   RefreshCw,
   ReplyAll,
-  Trash2
+  ShieldAlert,
+  Trash2,
 } from "lucide-react";
-import { deleteEmailsAction, toggleReadStatusAction } from "../email-actions";
+import {
+  deleteEmailsAction,
+  markAsSpamByEmailIdAction,
+  markEmailAsReadByEmailIdAction,
+  toggleReadByEmailIdAction
+} from "../email-actions";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ComposeDialog } from "../_components/compose-dialog";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
 
 interface Props {
   email: any;
   currentUserId: string;
   users: any[];
   isRead: boolean;
-  currentFolder: string; // ✅ Added this prop
+  currentFolder: string;
 }
 
-export function EmailDetailToolbar({ email, currentUserId, users, isRead, currentFolder }: Props) {
+export function EmailDetailToolbar({
+  email,
+  currentUserId,
+  users,
+  isRead,
+  currentFolder,
+}: Props) {
   const router = useRouter();
   const [replyAllOpen, setReplyAllOpen] = useState(false);
 
-  // --- LOGIC: Calculate Reply All Recipients ---
+  // optimistic read state
+  const [localIsRead, setLocalIsRead] = useState<boolean>(!!isRead);
+
+  // real Email.id
+  const emailId: string = email?.emailId ?? email?.id;
+
+  // receiver-side only (sent/drafts can’t be marked read)
+  const canMarkRead = !!emailId && !["sent", "drafts"].includes(currentFolder);
+
+  // AUTO mark as read when opening detail (receiver-side only)
+  useEffect(() => {
+    if (!canMarkRead) return;
+    if (localIsRead) return;
+
+    (async () => {
+      try {
+        setLocalIsRead(true);
+        await markEmailAsReadByEmailIdAction(emailId);
+
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("refresh-sidebar-counts"));
+        }
+        router.refresh();
+      } catch (e) {
+        setLocalIsRead(false);
+        console.error(e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emailId, canMarkRead]);
+
   const getReplyAllDefaults = () => {
     const toSet = new Set<string>([email.senderId]);
-    email.recipients.forEach((r: any) => {
-      if (r.userId !== currentUserId && (r.type === 'TO' || r.type === 'CC')) {
+
+    email.recipients?.forEach((r: any) => {
+      if (r.userId !== currentUserId && (r.type === "TO" || r.type === "CC")) {
         toSet.add(r.userId);
       }
     });
 
     return {
       toIds: Array.from(toSet),
-      subject: email.subject.startsWith("Re:") ? email.subject : `Re: ${email.subject}`,
-      body: `\n\n\n--- Reply All ---\nOn ${new Date(email.createdAt).toLocaleString()}, ${email.sender.name} wrote:\n> ${email.body}`
+      subject: email.subject?.startsWith("Re:") ? email.subject : `Re: ${email.subject}`,
+      body: `\n\n\n--- Reply All ---\nOn ${new Date(email.createdAt).toLocaleString()}, ${email.sender?.name} wrote:\n> ${email.body}`,
     };
   };
 
@@ -56,28 +96,55 @@ export function EmailDetailToolbar({ email, currentUserId, users, isRead, curren
   };
 
   const handleToggleRead = async () => {
-    await toggleReadStatusAction(email.id, !isRead);
-    toast.success(isRead ? "Marked as Unread" : "Marked as Read");
-    router.refresh();
+    if (!canMarkRead) return;
+
+    const next = !localIsRead;
+    setLocalIsRead(next);
+
+    try {
+      await toggleReadByEmailIdAction(emailId, next);
+      toast.success(next ? "Marked as Read" : "Marked as Unread");
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("refresh-sidebar-counts"));
+      }
+      router.refresh();
+    } catch (e) {
+      setLocalIsRead(!next);
+      console.error(e);
+      toast.error("Failed to update read status");
+    }
   };
 
-  // ✅ FIXED DELETE LOGIC
-const handleDelete = async () => {
-    // Pass the actual currentFolder ('trash', 'inbox', etc.)
-    // If currentFolder is 'trash', the server action will perform a Hard Delete.
-    await deleteEmailsAction([email.id], currentFolder);
-    
-    const isHardDelete = currentFolder === 'trash'; // Used for toast/logic clarity
+  const handleSpam = async () => {
+    try {
+      await markAsSpamByEmailIdAction(emailId, currentFolder);
 
-    if (isHardDelete) {
-      toast.success("Permanently deleted");
-    } else {
-      toast.success("Moved to trash");
+      toast.success("Marked as spam");
+
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("refresh-sidebar-counts"));
+      }
+
+      // move user back to list (optional but feels right)
+      router.push(`/email?folder=${currentFolder}`);
+      router.refresh();
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to mark as spam");
     }
-    
-    // CRITICAL FIX: Redirect back to the specific folder list immediately.
-    // This solves the "Access Denied" error and the list disappearing after view.
-    router.push(`/email?folder=${currentFolder}`); 
+  };
+
+  const handleDelete = async () => {
+    await deleteEmailsAction([emailId], currentFolder);
+
+    const isHardDelete = currentFolder === "trash";
+    toast.success(isHardDelete ? "Permanently deleted" : "Moved to trash");
+
+    router.push(`/email?folder=${currentFolder}`);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("refresh-sidebar-counts"));
+    }
   };
 
   return (
@@ -95,13 +162,35 @@ const handleDelete = async () => {
             <RefreshCw className="h-4 w-4 text-slate-500" />
           </Button>
 
-          {/* MARK READ / UNREAD */}
-          <Button variant="ghost" size="icon" onClick={handleToggleRead} title={isRead ? "Mark as Unread" : "Mark as Read"}>
-            {isRead ? (
-              <Mail className="h-4 w-4 text-slate-400" /> 
+          {/* MARK READ / UNREAD (no special color) */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleToggleRead}
+            disabled={!canMarkRead}
+            title={
+              !canMarkRead
+                ? "Read status not available for Sent/Drafts"
+                : localIsRead
+                ? "Mark as Unread"
+                : "Mark as Read"
+            }
+          >
+            {localIsRead ? (
+              <MailOpen className="h-4 w-4 text-slate-500" />
             ) : (
-              <MailOpen className="h-4 w-4 text-emerald-500" />
+              <Mail className="h-4 w-4 text-slate-500" />
             )}
+          </Button>
+
+          {/* SPAM (✅ ALWAYS ACTIVE both sides) */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleSpam}
+            title="Mark as spam"
+          >
+            <ShieldAlert className="h-4 w-4 text-slate-500" />
           </Button>
 
           {/* PRINT */}
@@ -113,7 +202,7 @@ const handleDelete = async () => {
 
           {/* REPLY ALL */}
           <Button variant="ghost" size="icon" onClick={() => setReplyAllOpen(true)} title="Reply All">
-             <ReplyAll className="h-4 w-4 text-slate-700" />
+            <ReplyAll className="h-4 w-4 text-slate-700" />
           </Button>
 
           {/* DELETE */}
@@ -123,10 +212,9 @@ const handleDelete = async () => {
         </div>
       </div>
 
-      {/* Hidden Compose Dialog for Reply All */}
-      <ComposeDialog 
+      <ComposeDialog
         users={users}
-        open={replyAllOpen} 
+        open={replyAllOpen}
         onOpenChange={setReplyAllOpen}
         defaultValues={getReplyAllDefaults()}
         trigger={null}
