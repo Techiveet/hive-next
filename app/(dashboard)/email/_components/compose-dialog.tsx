@@ -1,6 +1,15 @@
 // app/(dashboard)/email/_components/compose-dialog.tsx
 "use client";
 
+import { Check, ChevronsUpDown } from "lucide-react";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Dialog,
   DialogContent,
@@ -9,6 +18,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Lock, Plus, X } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import React, { useEffect, useMemo, useState, useTransition } from "react";
 import {
   RichEditorUploadedFile,
@@ -21,7 +31,7 @@ import {
 import {
   saveDraftAction,
   sendEmailAction,
-  updateDraftAction
+  updateDraftAction,
 } from "../email-actions";
 
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +55,14 @@ function RecipientInput({
   selectedIds: string[];
   onChange: (ids: string[]) => void;
 }) {
+  const [open, setOpen] = React.useState(false);
+
   const availableUsers = users.filter((u: any) => !selectedIds.includes(u.id));
+
+  const addRecipient = (id: string) => {
+    onChange([...selectedIds, id]);
+    setOpen(false);
+  };
 
   return (
     <div className="flex flex-col gap-2">
@@ -78,26 +95,50 @@ function RecipientInput({
             );
           })}
 
-          <select
-            className="flex-1 min-w-[120px] bg-transparent text-sm outline-none py-1 cursor-pointer text-slate-700 dark:text-slate-200 dark:bg-transparent"
-            onChange={(e) => {
-              if (e.target.value) onChange([...selectedIds, e.target.value]);
-              e.target.value = "";
-            }}
-          >
-            <option
-              key="add-recipient-placeholder"
-              value=""
-              className="dark:text-slate-800"
-            >
-              + Add recipient
-            </option>
-            {availableUsers.map((u: any) => (
-              <option key={u.id} value={u.id} className="dark:text-slate-800">
-                {u.name} ({u.email})
-              </option>
-            ))}
-          </select>
+          {/* ✅ Searchable "Add recipient" */}
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="
+                  h-7 px-2 rounded-md text-sm
+                  border border-slate-200 dark:border-slate-700
+                  bg-white dark:bg-slate-900
+                  text-slate-700 dark:text-slate-200
+                  hover:bg-slate-50 dark:hover:bg-slate-800
+                  inline-flex items-center gap-1
+                "
+              >
+                + Add recipient <ChevronsUpDown className="h-3.5 w-3.5 opacity-70" />
+              </button>
+            </PopoverTrigger>
+
+            <PopoverContent className="p-0 w-[320px]">
+              <Command>
+                <CommandInput placeholder="Search user..." />
+                <CommandList className="max-h-64">
+                  <CommandEmpty>No user found.</CommandEmpty>
+
+                  <CommandGroup>
+                    {availableUsers.map((u: any) => {
+                      const label = `${u.name ?? ""} (${u.email})`.trim();
+                      return (
+                        <CommandItem
+                          key={u.id}
+                          value={label}
+                          onSelect={() => addRecipient(u.id)}
+                          className="flex items-center justify-between"
+                        >
+                          <span className="truncate">{label}</span>
+                          <Check className="h-4 w-4 opacity-0" />
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
     </div>
@@ -170,7 +211,8 @@ export function ComposeDialog({
   // Attachments & Image Editor
   const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
   const [imageEditorOpen, setImageEditorOpen] = useState(false);
-  const [imageEditorState, setImageEditorState] = useState<ImageEditorState | null>(null);
+  const [imageEditorState, setImageEditorState] =
+    useState<ImageEditorState | null>(null);
   const [imageEditorEditor, setImageEditorEditor] = useState<any>(null);
 
   // --- Helpers ---
@@ -200,9 +242,12 @@ export function ComposeDialog({
 
   // ✅ Load draft into composer
   const loadDraftIntoComposer = async (draftId: string) => {
-    const res = await fetch(`/api/emails/drafts/${draftId}`, { cache: "no-store" });
+    const res = await fetch(`/api/emails/drafts/${draftId}`, {
+      cache: "no-store",
+    });
     const json = await res.json();
-    if (!res.ok || !json?.data) throw new Error(json?.error || "Failed to load draft");
+    if (!res.ok || !json?.data)
+      throw new Error(json?.error || "Failed to load draft");
 
     const d = json.data;
 
@@ -366,7 +411,10 @@ export function ComposeDialog({
       if (encryptionStatus) {
         try {
           const encryptedBody = await pgpEncrypt(body, allKeysToEncryptFor);
-          const encryptedSubject = await pgpEncrypt(subject, allKeysToEncryptFor);
+          const encryptedSubject = await pgpEncrypt(
+            subject,
+            allKeysToEncryptFor
+          );
 
           finalBody = btoa(encryptedBody);
           finalSubject = btoa(encryptedSubject);
@@ -588,7 +636,8 @@ export function ComposeDialog({
           <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3 bg-slate-50/20 dark:bg-slate-900/20">
             {isE2EE && (
               <div className="text-sm text-yellow-600 dark:text-yellow-400 mb-2 border-y border-yellow-200 dark:border-yellow-800 py-1 px-2 bg-yellow-50 dark:bg-yellow-950/50">
-                E2EE Active: The message content will be encrypted before sending. Attachments are NOT encrypted.
+                E2EE Active: The message content will be encrypted before
+                sending. Attachments are NOT encrypted.
               </div>
             )}
 
@@ -641,8 +690,8 @@ export function ComposeDialog({
                     ? "Updating..."
                     : "Saving..."
                   : editingDraftId
-                  ? "Update draft"
-                  : "Save draft"}
+                    ? "Update draft"
+                    : "Save draft"}
               </Button>
 
               <Button
@@ -703,11 +752,21 @@ export function ComposeDialog({
                 />
               </div>
               <div className="flex justify-between items-center gap-2">
-                <Button variant="outline" size="sm" type="button" onClick={removeImage}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={removeImage}
+                >
                   Remove image
                 </Button>
                 <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" type="button" onClick={() => setImageEditorOpen(false)}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => setImageEditorOpen(false)}
+                  >
                     Cancel
                   </Button>
                   <Button size="sm" type="button" onClick={applyImageEdits}>
