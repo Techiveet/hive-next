@@ -3,6 +3,7 @@
 
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "driver.js/dist/driver.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -355,4 +356,26 @@
   margin: 0.75rem 0;
   cursor: zoom-in;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.15);
+}
+/* driver.js custom theme */
+.hive-driver .driver-popover {
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 25px 70px rgba(0,0,0,.30);
+  border: 1px solid rgba(148,163,184,.35);
+}
+
+.hive-driver .driver-popover-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.hive-driver .driver-popover-description {
+  font-size: 13px;
+  color: rgb(71,85,105);
+  line-height: 1.4;
+}
+
+.hive-driver .driver-popover-footer button {
+  border-radius: 12px;
 }

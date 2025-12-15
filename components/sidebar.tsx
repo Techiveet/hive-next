@@ -16,16 +16,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 import { useTranslation } from "@/lib/hooks/use-translation";
-
-// ✅ ADD
-
 
 type SidebarProps = {
   user?: {
@@ -39,24 +37,75 @@ type SidebarProps = {
     logoDarkUrl?: string | null;
     sidebarIconUrl?: string | null;
   };
+
+  // ✅ REAL props
+  isOpen: boolean;
+  setIsOpen: (open: boolean) => void;
 };
 
 const STORAGE_KEY = "hive-sidebar-collapsed";
 
-export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
+export function Sidebar({
+  user,
+  permissions = [],
+  brand,
+  isOpen,
+  setIsOpen,
+}: SidebarProps) {
   const pathname = usePathname();
   const { resolvedTheme } = useTheme();
   const { t } = useTranslation();
 
-  const navItems = [
-    { label: t("sidebar.dashboard", "Dashboard"), href: "/dashboard", icon: LayoutDashboard },
-    { label: t("sidebar.tenants", "Tenants"), href: "/tenants", icon: Building2 },
-    { label: t("sidebar.security", "Security"), href: "/security", icon: ShieldCheck },
-    { label: t("sidebar.files", "Files"), href: "/files", icon: Folder },
-    { label: t("sidebar.billing", "Billing"), href: "/billing", icon: CreditCard },
-    { label: t("sidebar.settings", "Settings"), href: "/settings", icon: Settings },
-  ];
+  const navItems = useMemo(
+    () => [
+      {
+        key: "dashboard",
+        tour: "nav-dashboard",
+        label: t("sidebar.dashboard", "Dashboard"),
+        href: "/dashboard",
+        icon: LayoutDashboard,
+      },
+      {
+        key: "tenants",
+        tour: "nav-tenants",
+        label: t("sidebar.tenants", "Tenants"),
+        href: "/tenants",
+        icon: Building2,
+      },
+      {
+        key: "security",
+        tour: "nav-security",
+        label: t("sidebar.security", "Security"),
+        href: "/security",
+        icon: ShieldCheck,
+      },
+      {
+        key: "files",
+        tour: "nav-files",
+        label: t("sidebar.files", "Files"),
+        href: "/files",
+        icon: Folder,
+      },
+      {
+        key: "billing",
+        tour: "nav-billing",
+        label: t("sidebar.billing", "Billing"),
+        href: "/billing",
+        icon: CreditCard,
+      },
+      {
+        key: "settings",
+        tour: "nav-settings",
+        label: t("sidebar.settings", "Settings"),
+        href: "/settings",
+        icon: Settings,
+      },
+    ],
+    [t]
+  );
 
+  // ✅ collapsed = desktop compact mode (saved)
+  // ✅ isOpen = mobile overlay open state
   const [collapsed, setCollapsed] = useState(true);
   const [mounted, setMounted] = useState(false);
 
@@ -68,7 +117,7 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
     setMounted(true);
   }, []);
 
-  const toggleSidebar = () => {
+  const toggleCollapsed = () => {
     const next = !collapsed;
     setCollapsed(next);
     try {
@@ -83,7 +132,12 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
     has("dashboard.view") ||
     hasAny(["view_security", "manage_security", "manage_tenants", "manage_billing"]);
   const canSeeTenants = has("manage_tenants");
-  const canSeeSecurity = hasAny(["view_security", "manage_security", "manage_users", "manage_roles"]);
+  const canSeeSecurity = hasAny([
+    "view_security",
+    "manage_security",
+    "manage_users",
+    "manage_roles",
+  ]);
   const canSeeFiles = hasAny(["files.view", "manage_files"]);
   const canSeeBilling = hasAny(["manage_billing", "billing.view"]);
   const canSeeSettings = hasAny([
@@ -97,10 +151,25 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
     "manage_tenants",
   ]);
 
+  const isVisible = (href: string) => {
+    if (href === "/dashboard") return canSeeDashboard;
+    if (href === "/tenants") return canSeeTenants;
+    if (href === "/security") return canSeeSecurity;
+    if (href === "/files") return canSeeFiles;
+    if (href === "/billing") return canSeeBilling;
+    if (href === "/settings") return canSeeSettings;
+    return true;
+  };
+
   const appTitle = brand?.titleText?.trim() || "Hive";
   const { logoLightUrl, logoDarkUrl, sidebarIconUrl } = brand || {};
-  const isDark = resolvedTheme === "dark";
-  const logoForTheme = isDark ? logoDarkUrl || logoLightUrl || null : logoLightUrl || logoDarkUrl || null;
+
+  // ✅ avoid hydration mismatch: theme value is reliable only after mount
+  const isDark = mounted ? resolvedTheme === "dark" : false;
+
+  const logoForTheme = isDark
+    ? logoDarkUrl || logoLightUrl || null
+    : logoLightUrl || logoDarkUrl || null;
 
   const hasLogo = !!logoForTheme;
   const hasFavicon = !!sidebarIconUrl;
@@ -111,10 +180,8 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
     </div>
   );
 
-  // ✅ small helper: only show tooltip when collapsed
-  const maybeWrapWithTooltip = (label: string, node: React.ReactNode) => {
+  const maybeWrapWithTooltip = (label: string, node: ReactNode) => {
     if (!collapsed) return node;
-
     return (
       <Tooltip>
         <TooltipTrigger asChild>{node}</TooltipTrigger>
@@ -125,12 +192,36 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
     );
   };
 
+  const closeMobile = () => setIsOpen(false);
+
   return (
     <TooltipProvider delayDuration={120}>
+      {/* ✅ Backdrop for mobile overlay */}
+      {isOpen && (
+        <button
+          type="button"
+          onClick={closeMobile}
+          aria-label="Close sidebar overlay"
+          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+        />
+      )}
+
       <aside
+        data-tour="sidebar"
         className={cn(
-          "relative flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground dark:bg-slate-950 dark:text-slate-50",
-          collapsed ? "w-[4.25rem]" : "w-64",
+          // base
+          "z-50 flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground dark:bg-slate-950 dark:text-slate-50",
+
+          // desktop width modes
+          collapsed ? "lg:w-[4.25rem]" : "lg:w-64",
+
+          // ✅ desktop: always visible
+          "hidden lg:flex lg:relative",
+
+          // ✅ mobile overlay
+          isOpen && "fixed inset-y-0 left-0 w-[18rem] sm:w-64 flex lg:flex",
+
+          // animation (only after mount)
           mounted && "transition-all duration-300"
         )}
       >
@@ -141,7 +232,11 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
               {hasFavicon ? (
                 <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-2xl bg-background shadow-lg shadow-chart-1/30">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={sidebarIconUrl!} alt={appTitle} className="h-7 w-7 object-contain" />
+                  <img
+                    src={sidebarIconUrl!}
+                    alt={appTitle}
+                    className="h-7 w-7 object-contain"
+                  />
                 </div>
               ) : (
                 fallbackPill
@@ -152,14 +247,20 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
               <div className="flex h-9 min-w-9 items-center justify-center">
                 {hasLogo ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={logoForTheme!} alt={appTitle} className="h-8 w-auto max-w-[140px] object-contain" />
+                  <img
+                    src={logoForTheme!}
+                    alt={appTitle}
+                    className="h-8 w-auto max-w-[140px] object-contain"
+                  />
                 ) : (
                   fallbackPill
                 )}
               </div>
 
               <div className="flex flex-col overflow-hidden leading-tight">
-                <span className="truncate text-sm font-semibold tracking-tight">{appTitle}</span>
+                <span className="truncate text-sm font-semibold tracking-tight">
+                  {appTitle}
+                </span>
                 <span className="truncate text-[10px] uppercase text-muted-foreground">
                   Multi-tenant hub
                 </span>
@@ -171,19 +272,14 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
         {/* Nav */}
         <nav className="mt-2 flex-1 space-y-1 px-2">
           {navItems.map((item) => {
-            if (item.href === "/dashboard" && !canSeeDashboard) return null;
-            if (item.href === "/tenants" && !canSeeTenants) return null;
-            if (item.href === "/security" && !canSeeSecurity) return null;
-            if (item.href === "/files" && !canSeeFiles) return null;
-            if (item.href === "/billing" && !canSeeBilling) return null;
-            if (item.href === "/settings" && !canSeeSettings) return null;
+            if (!isVisible(item.href)) return null;
 
             const Icon = item.icon;
             const active = pathname.startsWith(item.href);
 
             const link = (
               <Link
-                key={item.href}
+                data-tour={item.tour} // ✅ TOUR TARGET PER LINK
                 href={item.href}
                 className={cn(
                   "group flex items-center gap-3 rounded-xl px-2 py-2 text-xs font-medium transition-all",
@@ -192,6 +288,8 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
                   active &&
                     "bg-slate-900 text-slate-50 shadow-md shadow-slate-900/20 dark:bg-slate-800 dark:text-slate-50 dark:shadow-emerald-500/20"
                 )}
+                onClick={closeMobile} // ✅ close on mobile after nav
+                aria-current={active ? "page" : undefined}
               >
                 <div
                   className={cn(
@@ -203,16 +301,13 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
                 >
                   <Icon className="h-4 w-4" />
                 </div>
+
+                {/* label only on desktop expanded */}
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
             );
 
-            // ✅ tooltip only in collapsed mode
-            return (
-              <div key={item.href}>
-                {maybeWrapWithTooltip(item.label, link)}
-              </div>
-            );
+            return <div key={item.key}>{maybeWrapWithTooltip(item.label, link)}</div>;
           })}
         </nav>
 
@@ -230,12 +325,12 @@ export function Sidebar({ user, permissions = [], brand }: SidebarProps) {
           </div>
         )}
 
-        {/* Collapse toggle */}
+        {/* Collapsed toggle (desktop) */}
         <button
           type="button"
-          onClick={toggleSidebar}
+          onClick={toggleCollapsed}
           className={cn(
-            "absolute top-16 -right-3 flex h-8 w-8 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-lg shadow-sidebar-ring/30 transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800",
+            "absolute top-16 -right-3 hidden lg:flex h-8 w-8 items-center justify-center rounded-full border border-sidebar-border bg-sidebar text-sidebar-foreground shadow-lg shadow-sidebar-ring/30 transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800",
             "focus:outline-none"
           )}
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}

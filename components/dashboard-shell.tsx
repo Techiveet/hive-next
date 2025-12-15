@@ -1,33 +1,13 @@
 "use client";
 
-import type { Dispatch, SetStateAction } from "react"; // ✅ Import utility types
+import { useEffect, useState } from "react";
 
+import { DashboardTourMount } from "@/components/tour/dashboard-tour-mount";
 import { Navbar } from "@/components/navbar";
 import { RbacProvider } from "@/lib/security/rbac-context";
 import type { ReactNode } from "react";
 import { Sidebar } from "@/components/sidebar";
 import type { UnreadEmailData } from "@/components/email-menu";
-import { useState } from "react";
-
-// 1. Define the props expected by the Sidebar component
-// This resolves the Type Error saying 'isOpen' does not exist on SidebarProps
-type SidebarProps = {
-  user: {
-    id: string;
-    name: string | null;
-    email: string;
-    image?: string | null;
-  };
-  permissions: string[];
-  brand?: {
-    titleText?: string | null;
-    logoLightUrl?: string | null;
-    logoDarkUrl?: string | null;
-    sidebarIconUrl?: string | null;
-  };
-  isOpen: boolean; // ⬅️ ADDED
-  setIsOpen: Dispatch<SetStateAction<boolean>>; // ⬅️ ADDED
-};
 
 type DashboardShellProps = {
   user: {
@@ -45,19 +25,16 @@ type DashboardShellProps = {
   };
   currentLocale?: string;
   languages?: { code: string; name: string }[];
-
-  // ✅ New Prop
   emailData?: {
     count: number;
     items: UnreadEmailData[];
   };
 
+  // ✅ ADD: tenant key (tenant-aware tour)
+  tenantKey: string;
+
   children: ReactNode;
 };
-
-// 2. Type cast the Sidebar import to ensure it accepts the SidebarProps defined above
-// This is done to satisfy the TypeScript error.
-const TypedSidebar = Sidebar as React.FC<SidebarProps>;
 
 export function DashboardShell({
   children,
@@ -67,15 +44,25 @@ export function DashboardShell({
   currentLocale,
   languages,
   emailData,
+  tenantKey,
 }: DashboardShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
+  // ✅ When tour starts, ensure sidebar is open (important for mobile + selector existence)
+  useEffect(() => {
+    const handler = () => setIsSidebarOpen(true);
+    window.addEventListener("start-app-tour", handler);
+    return () => window.removeEventListener("start-app-tour", handler);
+  }, []);
+
   return (
     <RbacProvider permissions={permissions}>
+      {/* ✅ Mount tour ONLY HERE (client). Tenant-aware. */}
+      <DashboardTourMount userId={user.id} tenantKey={tenantKey} />
+
       <div className="flex min-h-screen bg-background text-foreground dark:bg-slate-950 dark:text-slate-50">
-        {/* 3. Use the typed Sidebar component */}
-        <TypedSidebar
-          user={user}
+        <Sidebar
+          user={{ name: user.name, email: user.email }}
           permissions={permissions}
           brand={brand}
           isOpen={isSidebarOpen}
@@ -90,7 +77,10 @@ export function DashboardShell({
             emailData={emailData}
           />
 
-          <main className="flex-1 bg-background px-4 py-6 lg:px-6 xl:px-8 dark:bg-slate-950 overflow-y-auto">
+          <main
+            data-tour="content"
+            className="flex-1 bg-background px-4 py-6 lg:px-6 xl:px-8 dark:bg-slate-950 overflow-y-auto"
+          >
             <div className="w-full">{children}</div>
           </main>
         </div>

@@ -52,6 +52,15 @@ export function Navbar({
       </div>
 
       <div className="flex items-center gap-2">
+<button
+  data-tour="start-tour"
+  type="button"
+  onClick={() => window.dispatchEvent(new Event("start-app-tour"))}
+>
+  Start Tour
+</button>
+
+
         <LanguageSwitcher 
             currentLocale={currentLocale} 
             languages={languages} 

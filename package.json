@@ -68,6 +68,7 @@
     "cron": "^4.4.0",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
+    "driver.js": "^1.4.0",
     "express": "^5.2.1",
     "filepond": "^4.32.10",
     "filepond-plugin-image-preview": "^4.6.12",

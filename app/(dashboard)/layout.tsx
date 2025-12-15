@@ -16,9 +16,6 @@ import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 
-// ✅ ADD THIS
-
-
 // 1. Define Default Dictionary
 const DEFAULT_DICTIONARY = {
   "dashboard.title": "Dashboard",
@@ -121,6 +118,9 @@ export default async function DashboardLayout({
 
   const tenantId = await resolveTenantIdFromHost();
 
+  // ✅ tenant-aware key (works across ALL tenants)
+  const tenantKey = tenantId ?? "central";
+
   // ✅ SECURITY CHECK: IP RESTRICTION
   const ipCheck = await checkIpRestriction(tenantId);
 
@@ -168,15 +168,10 @@ export default async function DashboardLayout({
   }
 
   if (!permissions || permissions.length === 0) {
-    if (process.env.NODE_ENV !== "production") {
-      console.log(
-        "[DashboardLayout] No permissions → redirecting to /access-denied"
-      );
-    }
     redirect("/access-denied");
   }
 
-  // 2. Determine Active Language
+  // Determine Active Language
   const activeLocale = finalAppSettings?.locale ?? "en";
 
   const activeLanguageRecord =
@@ -208,8 +203,10 @@ export default async function DashboardLayout({
   return (
     <PermissionsProvider permissions={permissions}>
       <AppConfigProvider config={config}>
-        {/* ✅ WRAP HERE so ALL client components (RichTextEditor included) see translations */}
-        <I18nProvider locale={activeLocale} messages={finalDictionary as Record<string, string>}>
+        <I18nProvider
+          locale={activeLocale}
+          messages={finalDictionary as Record<string, string>}
+        >
           <SessionGuard timeoutMinutes={config.sessionTimeout} />
           <TwoFactorEnforcer
             enforced={config.enforceTwoFactor}
@@ -218,6 +215,7 @@ export default async function DashboardLayout({
           <FileManagerEventListener />
 
           <DashboardShell
+            tenantKey={tenantKey} // ✅ PASS DOWN
             user={{
               id: user.id,
               name: user.name ?? null,
