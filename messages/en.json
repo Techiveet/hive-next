@@ -14,5 +14,371 @@
   "sidebar.settings": "Settings",
   "sidebar.tenants": "Tenants",
   "validation.email": "Please enter a valid email",
-  "validation.required": "This field is required"
+  "validation.required": "This field is required",
+
+  "email.sidebar.title": "Mails",
+  "email.sidebar.all": "All Mails",
+  "email.sidebar.inbox": "Inbox",
+  "email.sidebar.sent": "Sent",
+  "email.sidebar.drafts": "Drafts",
+  "email.sidebar.archive": "Archived",
+  "email.sidebar.starred": "Starred",
+  "email.sidebar.spam": "Spam",
+  "email.sidebar.trash": "Trash",
+
+  "email.shortcuts.title": "Shortcuts",
+  "email.shortcuts.nextPrev": "Next / Previous",
+  "email.shortcuts.select": "Select email",
+  "email.shortcuts.star": "Star / unstar",
+  "email.shortcuts.archive": "Archive",
+  "email.shortcuts.delete": "Delete (move to trash)",
+  "email.shortcuts.spam": "Mark as spam",
+  "email.shortcuts.search": "Focus search",
+  "email.shortcuts.compose": "Compose",
+  "email.shortcuts.tip": "Tip: shortcuts work when you’re not typing in an input/editor.",
+
+  "email.search.placeholder": "Search emails...",
+
+  "email.list.recipients": "Recipients",
+  "email.list.toPrefix": "To: ",
+  "email.list.unknown": "Unknown",
+  "email.list.recently": "recently",
+  "email.list.noSubject": "(No Subject)",
+
+  "email.list.selectAll": "Select all",
+  "email.list.selectedCount": "{count} selected",
+
+  "email.actions.markRead": "Mark as read",
+  "email.actions.markUnread": "Mark as unread",
+  "email.actions.archive": "Archive",
+  "email.actions.spam": "Mark as spam",
+  "email.actions.delete": "Delete",
+
+  "email.empty.notFoundTitle": "Nothing found",
+  "email.empty.notFoundHint": "Try a different search term",
+  "email.empty.title": "No emails here",
+  "email.empty.inbox": "Your inbox is looking empty",
+  "email.empty.sent": "No sent messages yet",
+  "email.empty.generic": "This folder is empty",
+
+  "email.pagination.newer": "Newer",
+  "email.pagination.older": "Older",
+
+  "email.toast.loadFailed": "Failed to load emails.",
+  "email.toast.starFailed": "Failed to update star status",
+  "email.toast.actionFailed": "Action failed. Please try again.",
+ 
+  "email.compose.button": "Compose",
+  "email.compose.newMessage": "New Message",
+  "email.compose.editDraft": "Edit Draft",
+
+  "email.compose.to": "To",
+  "email.compose.cc": "Cc",
+  "email.compose.bcc": "Bcc",
+  "email.compose.showCcBcc": "Show CC/BCC",
+
+  "email.compose.addRecipient": "Add recipient",
+  "email.compose.searchUser": "Search user...",
+  "email.compose.noUserFound": "No user found.",
+
+  "email.compose.subject.placeholder": "Subject",
+
+  "email.compose.editor.placeholder": "Type your message here... (Try typing '@' to mention someone)",
+
+  "email.compose.e2ee.activeNotice": "E2EE Active: The message content will be encrypted before sending. Attachments are NOT encrypted.",
+  "email.compose.e2ee.activeLabel": "End-to-End Encryption (PGP) is Active",
+  "email.compose.e2ee.disabledLabel": "Encryption Disabled (Missing keys for one or more recipients)",
+
+  "email.compose.attachments.willBeSent": "{count} attachment{plural} will be sent",
+
+  "email.compose.saveDraft": "Save draft",
+  "email.compose.updateDraft": "Update draft",
+  "email.compose.saving": "Saving...",
+  "email.compose.updating": "Updating...",
+
+  "email.compose.discard": "Discard",
+  "email.compose.send": "Send",
+  "email.compose.sending": "Sending...",
+
+  "email.compose.validation.recipientRequired": "Add at least one recipient",
+  "email.compose.validation.subjectRequired": "Subject is required",
+
+  "email.compose.encrypt.success": "Message encrypted successfully!",
+  "email.compose.encrypt.senderKeyMissing": "Sender's key missing. Encryption skipped to prevent lock out of 'Sent' folder.",
+  "email.compose.encrypt.failedSendingUnencrypted": "Encryption failed. Sending unencrypted.",
+
+  "email.compose.toast.sent": "Sent!",
+  "email.compose.toast.draftSaved": "Draft saved",
+  "email.compose.toast.draftUpdated": "Draft updated",
+  "email.compose.toast.openDraftFailed": "Failed to open draft",
+
+  "email.compose.imageEditor.title": "Edit image",
+  "email.compose.imageEditor.close": "Close",
+  "email.compose.imageEditor.altLabel": "Alt text (for accessibility)",
+  "email.compose.imageEditor.altPlaceholder": "Describe the image",
+  "email.compose.imageEditor.remove": "Remove image",
+  "email.compose.imageEditor.cancel": "Cancel",
+  "email.compose.imageEditor.apply": "Apply",
+
+  "email.toolbar.badge.archived": "Archived",
+  "email.toolbar.badge.trashed": "Trashed",
+  "email.toolbar.badge.starred": "Starred",
+
+  "email.toolbar.action.archive": "Archive",
+  "email.toolbar.action.moveToInbox": "Move to Inbox",
+  "email.toolbar.action.moveToTrash": "Move to trash",
+  "email.toolbar.action.deleteForever": "Delete forever",
+
+  "email.toolbar.button.toInbox": "To Inbox",
+
+  "email.toolbar.toast.archived": "Archived",
+  "email.toolbar.toast.movedToInbox": "Moved to Inbox",
+  "email.toolbar.toast.movedToTrash": "Moved to trash",
+  "email.toolbar.toast.deletedForever": "Deleted forever",
+
+  "email.common.unknown": "Unknown",
+
+  "email.attachments.titleWithCount": "Attachments ({count})",
+  "email.attachments.totalSizeLabel": "Total size: {size}",
+  "email.attachments.file": "File",
+  "email.attachments.image": "Image",
+
+  "email.toast.movedToTrash": "Email moved to trash",
+  "email.toast.deleteFailed": "Failed to delete email",
+
+  "email.decryptFailed.title": "Automatic Decryption Failed",
+  "email.decryptFailed.desc": "This message is E2EE, but the server failed to decrypt it automatically.",
+  "email.decryptFailed.errorPrefix": "Error:",
+
+  "email.print.logoAlt": "Company Logo",
+
+  "email.detail.to": "To:",
+  "email.detail.cc": "Cc:",
+  "email.detail.undisclosedRecipients": "Undisclosed recipients",
+
+   "common.back": "Back",
+  "common.delete": "Delete",
+  "common.reload": "Reload",
+  "common.print": "Print",
+  "common.refreshed": "Refreshed",
+  "common.download": "Download",
+
+  "email.actions.reply": "Reply",
+  "email.actions.forward": "Forward",
+  "email.actions.replyAll": "Reply All",
+
+  "email.toast.markedRead": "Marked as Read",
+  "email.toast.markedUnread": "Marked as Unread",
+  "email.toast.readUpdateFailed": "Failed to update read status",
+  "email.toast.markedSpam": "Marked as spam",
+  "email.toast.spamFailed": "Failed to mark as spam",
+  "email.toast.deletedForever": "Permanently deleted",
+
+  "email.tooltip.readNotAvailable": "Read status not available for Sent/Drafts",
+  "email.tooltip.markUnread": "Mark as Unread",
+  "email.tooltip.markRead": "Mark as Read",
+  "email.tooltip.markSpam": "Mark as spam",
+
+  "email.reply.on": "On",
+  "email.reply.wrote": "wrote:",
+  "email.forward.forwardedMessage": "Forwarded message",
+  "email.forward.from": "From:",
+  "email.forward.date": "Date:",
+  "email.forward.subject": "Subject:",
+
+  "common.failed": "Failed",
+  "common.working": "Working...",
+
+  "email.spam.whyTitle": "Why is this message in spam?",
+  "email.spam.defaultReason": "This message matched spam signals.",
+  "email.spam.defaultReasonLong": "This message matches patterns identified as spam.",
+  "email.spam.reportNotSpam": "Report not spam",
+  "email.spam.score": "score: {{score}}",
+
+  "email.spam.toast.movedToInbox": "Moved to inbox",
+  "email.spam.toast.reportFailed": "Failed to report not spam",
+
+  "email.detail.toLabel": "To:",
+  "email.detail.decryptionFailedTitle": "Decryption Failed",
+
+  "email.attachments.title": "Attachments",
+  "email.attachments.download": "Download",
+
+    "email.page.placeholder.title": "Select an email to read",
+  "email.page.placeholder.subtitle": "Choose a message from the list to view its details.",
+
+  "email.errors.E_EMAIL_MASTER_KEY_MISSING": "PGP master key is not configured on the server.",
+  "email.errors.E_EMAIL_UNAUTHORIZED": "Unauthorized.",
+  "email.errors.E_EMAIL_NO_PRIVATE_KEY": "You don’t have a private key stored for automatic decryption.",
+  "email.errors.E_EMAIL_INVALID_ENCRYPTED_FORMAT": "Invalid encrypted message format. The message may be corrupted.",
+  "email.errors.E_EMAIL_DECRYPT_FAILED": "Decryption failed.",
+  "email.errors.E_EMAIL_KEY_VERIFY_FAILED": "Failed to verify your PGP keys.",
+  "email.errors.E_EMAIL_NO_KEYS": "No keys found for your account.",
+  "email.errors.E_EMAIL_KEY_MISMATCH": "Your public/private keys do not match.",
+
+ 
+  "email.folder.inbox": "Inbox",
+  "email.folder.sent": "Sent",
+  "email.folder.drafts": "Drafts",
+  "email.folder.archive": "Archived",
+  "email.folder.starred": "Starred",
+  "email.folder.spam": "Spam",
+  "email.folder.trash": "Trash",
+  "email.folder.all": "All Mails",
+ 
+
+ 
+  "rte.placeholder": "Write something...",
+  "rte.mention.noResult": "No result",
+
+  "rte.font.sans": "Sans-Serif (Default)",
+  "rte.font.serif": "Serif (Georgia)",
+  "rte.font.mono": "Monospace (Code)",
+  "rte.font.cursive": "Cursive",
+
+  "rte.size.small": "Small",
+  "rte.size.normal": "Normal",
+  "rte.size.large": "Large",
+  "rte.size.huge": "Huge",
+
+  "rte.lineHeight.single": "Single",
+  "rte.lineHeight.double": "Double",
+
+  "rte.actions.resetSize": "Reset size",
+  "rte.actions.resetFont": "Reset font",
+  "rte.actions.resetLineHeight": "Reset height",
+
+  "rte.heading.p": "P",
+  "rte.heading.paragraph": "Paragraph",
+  "rte.heading.level": "Heading {{level}}",
+
+  "rte.prompts.url": "URL",
+  "rte.prompts.videoUrl": "Paste video URL (YouTube/Vimeo/direct .mp4).\nLeave empty to pick a video from File Manager.",
+  "rte.file.defaultName": "download-attachment",
+
+  "rte.titles.fontSize": "Font Size",
+  "rte.titles.fontFamily": "Font Family",
+  "rte.titles.headingStyle": "Heading Style",
+  "rte.titles.lineHeight": "Line Height",
+
+  "rte.titles.bold": "Bold",
+  "rte.titles.italic": "Italic",
+  "rte.titles.underline": "Underline",
+  "rte.titles.strike": "Strikethrough",
+  "rte.titles.highlight": "Highlight",
+  "rte.titles.yellowHighlight": "Yellow highlight",
+
+  "rte.titles.subscript": "Subscript (x₂)",
+  "rte.titles.superscript": "Superscript (x²)",
+  "rte.titles.setLink": "Set link",
+  "rte.titles.unlink": "Unlink",
+
+  "rte.titles.bulletedList": "Bulleted list",
+  "rte.titles.numberedList": "Numbered list",
+  "rte.titles.blockquote": "Blockquote",
+  "rte.titles.codeBlock": "Code block",
+
+  "rte.titles.alignLeft": "Align left",
+  "rte.titles.alignCenter": "Align center",
+  "rte.titles.alignRight": "Align right",
+  "rte.titles.justify": "Justify",
+
+  "rte.titles.insertImage": "Insert image",
+  "rte.titles.editImage": "Edit selected image",
+  "rte.titles.selectImageToEdit": "Select an image to edit",
+  "rte.titles.insertFile": "Insert file",
+  "rte.titles.insertVideo": "Insert video",
+
+  "rte.titles.horizontalRule": "Horizontal rule",
+  "rte.titles.clearFormatting": "Clear formatting",
+  "rte.titles.undo": "Undo",
+  "rte.titles.redo": "Redo",
+
+  "rte.counter.characters": "{{count}} / {{max}} characters",
+  "rte.counter.words": "{{count}} words",
+ 
+ 
+  "editor": {
+    "placeholder": "Write something...",
+    "mention": {
+      "noResult": "No result"
+    },
+    "prompts": {
+      "url": "URL",
+      "video": "Paste video URL (YouTube/Vimeo/direct .mp4).\nLeave empty to pick a video from File Manager."
+    },
+    "fallbacks": {
+      "downloadAttachment": "download-attachment"
+    },
+    "toolbar": {
+      "fontSize": "Font Size",
+      "fontFamily": "Font Family",
+      "headingStyle": "Heading Style",
+      "lineHeight": "Line Height",
+
+      "bold": "Bold",
+      "italic": "Italic",
+      "underline": "Underline",
+      "strikethrough": "Strikethrough",
+      "highlight": "Highlight",
+      "yellowHighlight": "Yellow Highlight",
+
+      "subscript": "Subscript (x₂)",
+      "superscript": "Superscript (x²)",
+      "unlink": "Unlink",
+      "setLink": "Set Link",
+
+      "bulletedList": "Bulleted List",
+      "numberedList": "Numbered List",
+      "blockquote": "Blockquote",
+      "codeBlock": "Code Block",
+
+      "alignLeft": "Align Left",
+      "alignCenter": "Align Center",
+      "alignRight": "Align Right",
+      "justify": "Justify",
+
+      "insertImage": "Insert Image from File Manager",
+      "editSelectedImage": "Edit Selected Image",
+      "selectImageToEdit": "Select an image to edit",
+      "insertFile": "Insert File from File Manager",
+      "insertVideo": "Insert Video (URL or File Manager)",
+
+      "horizontalRule": "Horizontal Rule",
+      "clearFormatting": "Clear Formatting"
+    },
+    "options": {
+      "sizes": {
+        "small": "Small",
+        "normal": "Normal",
+        "large": "Large",
+        "huge": "Huge",
+        "reset": "[Reset Size]"
+      },
+      "fonts": {
+        "sans": "Sans-Serif (Default)",
+        "serif": "Serif (Georgia)",
+        "mono": "Monospace (Code)",
+        "cursive": "Cursive",
+        "reset": "[Reset Font]"
+      },
+      "heading": {
+        "paragraph": "P Paragraph",
+        "h": "H{level} Heading {level}"
+      },
+      "lineHeights": {
+        "single": "Single",
+        "oneHalf": "1.5",
+        "double": "Double",
+        "reset": "[Reset Height]"
+      }
+    },
+    "counter": {
+      "characters": "{count} / {max} characters",
+      "words": "{count} words"
+    }
+  }
+ 
+
+
 }

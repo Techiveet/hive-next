@@ -8,6 +8,7 @@ import { ComposeDialog } from "./../_components/compose-dialog";
 import { deleteEmailsAction } from "./../email-actions";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "@/lib/hooks/use-translation";
 
 const isTypingTarget = (e: KeyboardEvent) => {
   const el = e.target as HTMLElement | null;
@@ -29,10 +30,11 @@ const isTypingTarget = (e: KeyboardEvent) => {
 
 export function EmailTopToolbar({ emailId }: { emailId: string }) {
   const router = useRouter();
+  const { t } = useTranslation();
 
   const handleDelete = async () => {
     await deleteEmailsAction([emailId], "inbox");
-    toast.success("Email moved to trash");
+    toast.success(t("email.toast.movedToTrash", "Email moved to trash"));
     router.push("/email");
   };
 
@@ -45,7 +47,9 @@ export function EmailTopToolbar({ emailId }: { emailId: string }) {
         className="gap-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 pl-0 hover:bg-transparent"
       >
         <ArrowLeft className="h-5 w-5" />
-        <span className="text-base font-medium">Back</span>
+        <span className="text-base font-medium">
+          {t("common.back", "Back")}
+        </span>
       </Button>
 
       <div className="flex gap-1">
@@ -53,6 +57,7 @@ export function EmailTopToolbar({ emailId }: { emailId: string }) {
           variant="ghost"
           size="icon"
           onClick={handleDelete}
+          title={t("common.delete", "Delete")}
           className="text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
         >
           <Trash2 className="h-5 w-5" />
@@ -72,7 +77,13 @@ interface EmailReplyActionsProps {
   currentUserId: string;
 }
 
-export function EmailReplyActions({ email, users, currentUserId }: EmailReplyActionsProps) {
+export function EmailReplyActions({
+  email,
+  users,
+  currentUserId,
+}: EmailReplyActionsProps) {
+  const { t } = useTranslation();
+
   const [replyOpen, setReplyOpen] = useState(false);
   const [forwardOpen, setForwardOpen] = useState(false);
 
@@ -130,28 +141,36 @@ export function EmailReplyActions({ email, users, currentUserId }: EmailReplyAct
   }, [email, isSender]);
 
   const replySubject =
-    email.subject && email.subject.startsWith("Re:") ? email.subject : `Re: ${email.subject || ""}`;
+    email.subject && email.subject.startsWith("Re:")
+      ? email.subject
+      : `Re: ${email.subject || ""}`;
 
   const forwardSubject =
-    email.subject && email.subject.startsWith("Fwd:") ? email.subject : `Fwd: ${email.subject || ""}`;
+    email.subject && email.subject.startsWith("Fwd:")
+      ? email.subject
+      : `Fwd: ${email.subject || ""}`;
 
   const quotedOriginal = `<blockquote style="border-left:2px solid #e5e7eb;padding-left:8px;margin:8px 0;">
 ${email.body || ""}
 </blockquote>`;
 
+  // Keep these English-ish for email quoting consistency; still localizable if you want
   const replyBody = `
 <p><br/></p>
-<p>On ${createdAtStr}, ${senderName} &lt;${senderEmail}&gt; wrote:</p>
+<p>${t("email.reply.on", "On")} ${createdAtStr}, ${senderName} &lt;${senderEmail}&gt; ${t(
+    "email.reply.wrote",
+    "wrote:"
+  )}</p>
 ${quotedOriginal}
 `;
 
   const forwardBody = `
 <p><br/></p>
 <p>
----------- Forwarded message ---------<br/>
-From: ${senderName} &lt;${senderEmail}&gt;<br/>
-Date: ${createdAtStr}<br/>
-Subject: ${email.subject || ""}</p>
+---------- ${t("email.forward.forwardedMessage", "Forwarded message")} ---------<br/>
+${t("email.forward.from", "From:")} ${senderName} &lt;${senderEmail}&gt;<br/>
+${t("email.forward.date", "Date:")} ${createdAtStr}<br/>
+${t("email.forward.subject", "Subject:")} ${email.subject || ""}</p>
 ${quotedOriginal}
 `;
 
@@ -162,7 +181,7 @@ ${quotedOriginal}
           onClick={openReply}
           className="h-10 gap-2 bg-emerald-500 px-6 text-white hover:bg-emerald-600 shadow-sm"
         >
-          <CornerUpLeft className="h-4 w-4" /> Reply
+          <CornerUpLeft className="h-4 w-4" /> {t("email.actions.reply", "Reply")}
         </Button>
 
         <Button
@@ -170,7 +189,7 @@ ${quotedOriginal}
           onClick={openForward}
           className="h-10 gap-2 border-slate-700 bg-transparent text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white"
         >
-          <Forward className="h-4 w-4" /> Forward
+          <Forward className="h-4 w-4" /> {t("email.actions.forward", "Forward")}
         </Button>
       </div>
 

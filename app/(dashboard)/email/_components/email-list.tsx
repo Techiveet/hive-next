@@ -40,6 +40,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { useEmailHotkeys } from "../_hooks/use-email-hotkeys";
+import { useTranslation } from "@/lib/hooks/use-translation"; // ✅ localization
 
 // ---------- TYPES ----------
 export type EmailAttachment = {
@@ -94,6 +95,7 @@ const EmailRow = memo(function EmailRow({
   onToggleStar,
   onRowClick,
   folderName,
+  t,
 }: {
   item: EmailListItem;
   isActive: boolean;
@@ -103,6 +105,7 @@ const EmailRow = memo(function EmailRow({
   onToggleStar: (id: string, currentStatus: boolean) => void;
   onRowClick: (id: string) => void;
   folderName: string;
+  t: (key: string, fallback?: string) => string;
 }) {
   const data = item.email;
   const isRead = item.isRead ?? true;
@@ -115,35 +118,28 @@ const EmailRow = memo(function EmailRow({
       if (data.recipients && data.recipients.length > 0) {
         const firstRecipient = data.recipients[0].user;
         const name = firstRecipient.name || firstRecipient.email;
-        if (data.recipients.length > 1) {
-          return name + ` +${data.recipients.length - 1}`;
-        }
+        if (data.recipients.length > 1) return name + ` +${data.recipients.length - 1}`;
         return name;
       }
-      return "Recipients";
+      return t("email.list.recipients", "Recipients");
     }
-    return data.sender?.name || data.sender?.email || "Unknown";
-  }, [folderName, data.recipients, data.sender]);
+    return data.sender?.name || data.sender?.email || t("common.unknown", "Unknown");
+  }, [folderName, data.recipients, data.sender, t]);
 
   const timeAgo = useMemo(() => {
     try {
       return formatDistanceToNow(new Date(data.createdAt), { addSuffix: true });
     } catch {
-      return "recently";
+      return t("email.list.recently", "recently");
     }
-  }, [data.createdAt]);
+  }, [data.createdAt, t]);
 
   const highlightText = useCallback((text: string, query: string) => {
-    if (!query.trim() || !text.toLowerCase().includes(query.toLowerCase())) {
-      return text;
-    }
+    if (!query.trim() || !text.toLowerCase().includes(query.toLowerCase())) return text;
     const regex = new RegExp(`(${query})`, "gi");
     return text.split(regex).map((part, i) =>
       part.toLowerCase() === query.toLowerCase() ? (
-        <mark
-          key={i}
-          className="bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded"
-        >
+        <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded">
           {part}
         </mark>
       ) : (
@@ -194,6 +190,7 @@ const EmailRow = memo(function EmailRow({
           checked={isSelected}
           onChange={() => {}}
           className="h-4 w-4 rounded border-slate-300 accent-emerald-500 cursor-pointer hover:accent-emerald-600 dark:border-slate-600"
+          aria-label={t("email.list.selectEmail", "Select email")}
         />
       </div>
 
@@ -221,7 +218,7 @@ const EmailRow = memo(function EmailRow({
                   : "font-medium text-slate-700 dark:text-slate-300"
               )}
             >
-              {folderName === "sent" && "To: "}
+              {folderName === "sent" && t("email.list.toPrefix", "To: ")}
               {highlightText(displayName, searchQuery)}
             </span>
 
@@ -261,6 +258,7 @@ const EmailRow = memo(function EmailRow({
                   ? "fill-amber-400 text-amber-400"
                   : "text-slate-300 dark:text-slate-600 hover:text-amber-400 dark:hover:text-amber-300"
               )}
+              aria-label={t("email.list.toggleStar", "Star / unstar")}
             />
           </div>
         </div>
@@ -273,7 +271,10 @@ const EmailRow = memo(function EmailRow({
               : "font-normal text-slate-700 dark:text-slate-300"
           )}
         >
-          {highlightText(data.subject || "(No Subject)", searchQuery)}
+          {highlightText(
+            data.subject || t("email.list.noSubject", "(No Subject)"),
+            searchQuery
+          )}
         </h4>
 
         <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
@@ -299,6 +300,9 @@ export function EmailList({
   const params = useParams();
   const searchParams = useSearchParams();
 
+  // ✅ translation
+  const { t } = useTranslation();
+
   const [emails, setEmails] = useState<EmailListItem[]>(initialEmails);
   const [cursor, setCursor] = useState<string | null>(nextCursor ?? null);
   const [loading, setLoading] = useState(false);
@@ -309,7 +313,6 @@ export function EmailList({
   const [isPending, startTransition] = useTransition();
   const [currentPage, setCurrentPage] = useState(1);
 
-  // ✅ IMPORTANT: don’t default to 0 if server didn’t pass totalCount
   const [totalEmails, setTotalEmails] = useState<number>(
     typeof totalCount === "number" ? totalCount : initialEmails.length
   );
@@ -322,10 +325,26 @@ export function EmailList({
 
   const activeEmailId = (params as any)?.id ?? null;
 
-  // ✅ Robust range label (works even if totalCount is missing)
+  // ✅ localized folder title for header
+  const folderTitle = useMemo(() => {
+    const map: Record<string, string> = {
+      inbox: t("email.folder.inbox", "Inbox"),
+      sent: t("email.folder.sent", "Sent"),
+      drafts: t("email.folder.drafts", "Drafts"),
+      archive: t("email.folder.archive", "Archived"),
+      starred: t("email.folder.starred", "Starred"),
+      spam: t("email.folder.spam", "Spam"),
+      trash: t("email.folder.trash", "Trash"),
+      all: t("email.folder.all", "All Mails"),
+    };
+    return map[folderName] ?? folderName;
+  }, [folderName, t]);
+
+  // ✅ localized pagination range
   const pageRange = useMemo(() => {
     if (!enablePagination) {
-      return `${emails.length} email${emails.length === 1 ? "" : "s"}`;
+      const n = emails.length;
+      return t("email.list.countLabel", `${n} email${n === 1 ? "" : "s"}`);
     }
 
     const start = (currentPage - 1) * pageSize + 1;
@@ -334,20 +353,25 @@ export function EmailList({
     const effectiveTotal =
       totalEmails > 0 ? totalEmails : emails.length > 0 ? end : 0;
 
-    if (effectiveTotal === 0) return "0-0 of 0";
+    if (effectiveTotal === 0) return t("email.list.rangeZero", "0-0 of 0");
 
     const safeStart = emails.length === 0 ? 0 : start;
     const safeEnd = emails.length === 0 ? 0 : Math.min(end, effectiveTotal);
 
-    return `${safeStart}-${safeEnd} of ${effectiveTotal.toLocaleString()}`;
-  }, [enablePagination, currentPage, pageSize, totalEmails, emails.length]);
+    return t(
+      "email.list.rangeOf",
+      `${safeStart}-${safeEnd} of ${effectiveTotal.toLocaleString()}`
+    );
+  }, [enablePagination, currentPage, pageSize, totalEmails, emails.length, t]);
 
   useEffect(() => {
     setEmails(initialEmails);
     setCursor(nextCursor ?? null);
     setHasMore(!!nextCursor);
 
-    setTotalEmails(typeof totalCount === "number" ? totalCount : initialEmails.length);
+    setTotalEmails(
+      typeof totalCount === "number" ? totalCount : initialEmails.length
+    );
 
     setCurrentPage(1);
     setCursorHistory([]);
@@ -377,7 +401,9 @@ export function EmailList({
           console.error("Server Error Details:", errorText);
           try {
             const errorJson = JSON.parse(errorText);
-            throw new Error(errorJson.message || `Server error: ${response.status}`);
+            throw new Error(
+              errorJson.message || `Server error: ${response.status}`
+            );
           } catch {
             throw new Error(
               `Failed to fetch: ${response.status} - ${errorText.substring(0, 50)}`
@@ -393,7 +419,6 @@ export function EmailList({
         setHasMore(!!data.hasNextPage);
         setCurrentPage(pageNum);
 
-        // ✅ DO NOT overwrite totalEmails with 0 if API didn’t send it
         if (typeof data.totalCount === "number") {
           setTotalEmails(data.totalCount);
         } else if (
@@ -422,13 +447,13 @@ export function EmailList({
         return data;
       } catch (error) {
         console.error("Failed to fetch emails:", error);
-        toast.error("Failed to load emails. Check console for details.");
+        toast.error(t("email.toast.loadFailed", "Failed to load emails."));
         return null;
       } finally {
         setLoading(false);
       }
     },
-    [folderName, pageSize, enablePagination, router]
+    [folderName, pageSize, enablePagination, router, t]
   );
 
   const loadPreviousPage = useCallback(() => {
@@ -441,7 +466,14 @@ export function EmailList({
       const previousCursor = cursorHistory[previousPage - 2];
       fetchEmails(previousCursor, searchQuery, previousPage);
     }
-  }, [currentPage, loading, fetchEmails, searchQuery, cursorHistory, enablePagination]);
+  }, [
+    currentPage,
+    loading,
+    fetchEmails,
+    searchQuery,
+    cursorHistory,
+    enablePagination,
+  ]);
 
   const loadNextPage = useCallback(() => {
     if (!enablePagination || !cursor || loading) return;
@@ -477,7 +509,9 @@ export function EmailList({
   }, [emails, selectedIds]);
 
   const toggleSelectOne = useCallback((id: string) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   }, []);
 
   const handleToggleStar = useCallback(
@@ -485,7 +519,9 @@ export function EmailList({
       const newStatus = !currentStatus;
       const emailItem = emails.find((e) => e.id === id);
 
-      setEmails((prev) => prev.map((e) => (e.id === id ? { ...e, isStarred: newStatus } : e)));
+      setEmails((prev) =>
+        prev.map((e) => (e.id === id ? { ...e, isStarred: newStatus } : e))
+      );
 
       startTransition(async () => {
         try {
@@ -494,7 +530,9 @@ export function EmailList({
           if (typeof window !== "undefined") {
             const eventName = newStatus ? "email-starred" : "email-unstarred";
             window.dispatchEvent(
-              new CustomEvent(eventName, { detail: { id, emailId: emailItem?.emailId } })
+              new CustomEvent(eventName, {
+                detail: { id, emailId: emailItem?.emailId },
+              })
             );
             window.dispatchEvent(new CustomEvent("refresh-sidebar-counts"));
           }
@@ -504,14 +542,13 @@ export function EmailList({
           setEmails((prev) =>
             prev.map((e) => (e.id === id ? { ...e, isStarred: currentStatus } : e))
           );
-          toast.error("Failed to update star status");
+          toast.error(t("email.toast.starFailed", "Failed to update star status"));
         }
       });
     },
-    [emails]
+    [emails, t]
   );
 
-  // ✅ Now supports passing ids directly (for hotkeys)
   const handleBulkAction = useCallback(
     async (
       action: "delete" | "archive" | "markRead" | "markUnread" | "spam",
@@ -523,7 +560,6 @@ export function EmailList({
       const selectedItems = emails.filter((e) => targetIds.includes(e.id));
       const affectedEmails = [...selectedItems];
 
-      // Optimistic update
       setEmails((prev) => prev.filter((e) => !targetIds.includes(e.id)));
       setSelectedIds([]);
 
@@ -561,14 +597,11 @@ export function EmailList({
           }
 
           if (enablePagination) {
-            setTimeout(() => {
-              fetchEmails(null, searchQuery, 1);
-            }, 100);
+            setTimeout(() => fetchEmails(null, searchQuery, 1), 100);
           } else {
             router.refresh();
           }
-        } catch (error) {
-          // Revert optimistic update
+        } catch {
           setEmails((prev) => {
             const remaining = prev.filter((e) => !targetIds.includes(e.id));
             return [...affectedEmails, ...remaining].sort(
@@ -577,17 +610,19 @@ export function EmailList({
                 new Date(a.email.createdAt).getTime()
             );
           });
-          toast.error("Action failed. Please try again.");
+          toast.error(t("email.toast.actionFailed", "Action failed. Please try again."));
         }
       });
     },
-    [selectedIds, folderName, emails, searchQuery, fetchEmails, enablePagination, router]
+    [selectedIds, folderName, emails, searchQuery, fetchEmails, enablePagination, router, t]
   );
 
   const handleRowClick = useCallback(
     (emailId: string) => {
       if (folderName === "drafts") {
-        window.dispatchEvent(new CustomEvent("open-draft-compose", { detail: { draftId: emailId } }));
+        window.dispatchEvent(
+          new CustomEvent("open-draft-compose", { detail: { draftId: emailId } })
+        );
         return;
       }
 
@@ -644,7 +679,6 @@ export function EmailList({
 
   useEmailHotkeys(
     {
-      // navigation
       j: (e) => {
         e.preventDefault();
         moveDown();
@@ -661,47 +695,30 @@ export function EmailList({
         e.preventDefault();
         openActiveOrFirst();
       },
-
-      // focus search
       "/": (e) => {
         e.preventDefault();
         searchInputRef.current?.focus();
       },
-
-      // compose
       c: (e) => {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("open-compose"));
       },
-
-      // select active
       x: (e) => {
         e.preventDefault();
         if (!activeItem) return;
         toggleSelectOne(activeItem.id);
       },
-
-      // star active
       s: (e) => {
         e.preventDefault();
         if (!activeItem) return;
         handleToggleStar(activeItem.id, !!activeItem.isStarred);
       },
-
-      // archive selected OR active
       e: (e) => {
         e.preventDefault();
         const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
         handleBulkAction("archive", ids);
       },
-
-      // delete selected OR active (#)
       "#": (e) => {
-        e.preventDefault();
-        const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
-        handleBulkAction("delete", ids);
-      },
-      "shift+#": (e) => {
         e.preventDefault();
         const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
         handleBulkAction("delete", ids);
@@ -711,14 +728,7 @@ export function EmailList({
         const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
         handleBulkAction("delete", ids);
       },
-
-      // spam selected OR active (!)
       "!": (e) => {
-        e.preventDefault();
-        const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
-        handleBulkAction("spam", ids);
-      },
-      "shift+!": (e) => {
         e.preventDefault();
         const ids = selectedIds.length ? selectedIds : activeItem ? [activeItem.id] : [];
         handleBulkAction("spam", ids);
@@ -773,26 +783,29 @@ export function EmailList({
                 checked={true}
                 onChange={toggleSelectAll}
                 className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-600 dark:border-slate-600"
+                aria-label={t("email.list.selectAll", "Select all")}
               />
               <span className="text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                {selectedIds.length} selected
+                {t("email.list.selectedCount", `${selectedIds.length} selected`)}
               </span>
             </div>
+
             <div className="flex gap-1">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => handleBulkAction("markRead", selectedIds)}
-                title="Mark as read"
+                title={t("email.actions.markRead", "Mark as read")}
                 disabled={isPending}
               >
                 <MailOpen className="h-4 w-4" />
               </Button>
+
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => handleBulkAction("markUnread", selectedIds)}
-                title="Mark as unread"
+                title={t("email.actions.markUnread", "Mark as unread")}
                 disabled={isPending}
               >
                 <Mail className="h-4 w-4" />
@@ -803,7 +816,7 @@ export function EmailList({
                   variant="ghost"
                   size="icon"
                   onClick={() => handleBulkAction("archive", selectedIds)}
-                  title="Archive"
+                  title={t("email.actions.archive", "Archive")}
                   disabled={isPending}
                 >
                   <Archive className="h-4 w-4" />
@@ -815,7 +828,7 @@ export function EmailList({
                   variant="ghost"
                   size="icon"
                   onClick={() => handleBulkAction("spam", selectedIds)}
-                  title="Mark as spam"
+                  title={t("email.actions.spam", "Mark as spam")}
                   disabled={isPending}
                 >
                   <ShieldAlert className="h-4 w-4" />
@@ -826,7 +839,7 @@ export function EmailList({
                 variant="ghost"
                 size="icon"
                 onClick={() => handleBulkAction("delete", selectedIds)}
-                title="Delete"
+                title={t("email.actions.delete", "Delete")}
                 disabled={isPending}
               >
                 <Trash2 className="h-4 w-4" />
@@ -839,22 +852,28 @@ export function EmailList({
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={emails.length > 0 && emails.every((e) => selectedIds.includes(e.id))}
+                  checked={
+                    emails.length > 0 &&
+                    emails.every((e) => selectedIds.includes(e.id))
+                  }
                   onChange={toggleSelectAll}
                   className="h-4 w-4 rounded border-slate-300 accent-emerald-500 cursor-pointer dark:border-slate-600"
+                  aria-label={t("email.list.selectAll", "Select all")}
                 />
                 <h2 className="font-bold text-lg capitalize text-slate-900 dark:text-white ml-2">
-                  {folderName}
+                  {folderTitle}
                 </h2>
               </div>
-              <span className="text-xs text-slate-500 dark:text-slate-400">{pageRange}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                {pageRange}
+              </span>
             </div>
 
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
               <Input
                 ref={searchInputRef}
-                placeholder="Search emails..."
+                placeholder={t("email.search.placeholder", "Search emails...")}
                 className="pl-9 h-9 text-sm bg-slate-50 dark:bg-slate-950 border-slate-200 dark:border-slate-800"
                 value={searchInput}
                 onChange={(e) => handleSearch(e.target.value)}
@@ -871,21 +890,25 @@ export function EmailList({
             {searchQuery ? (
               <>
                 <Search className="h-12 w-12 text-slate-300 dark:text-slate-700 mb-3" />
-                <p className="font-medium text-slate-700 dark:text-slate-300">Nothing found</p>
+                <p className="font-medium text-slate-700 dark:text-slate-300">
+                  {t("email.empty.notFoundTitle", "Nothing found")}
+                </p>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                  Try a different search term
+                  {t("email.empty.notFoundHint", "Try a different search term")}
                 </p>
               </>
             ) : (
               <>
                 <Mail className="h-12 w-12 text-slate-300 dark:text-slate-700 mb-3" />
-                <p className="font-medium text-slate-700 dark:text-slate-300">No emails here</p>
+                <p className="font-medium text-slate-700 dark:text-slate-300">
+                  {t("email.empty.title", "No emails here")}
+                </p>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                   {folderName === "inbox"
-                    ? "Your inbox is looking empty"
+                    ? t("email.empty.inbox", "Your inbox is looking empty")
                     : folderName === "sent"
-                    ? "No sent messages yet"
-                    : "This folder is empty"}
+                    ? t("email.empty.sent", "No sent messages yet")
+                    : t("email.empty.generic", "This folder is empty")}
                 </p>
               </>
             )}
@@ -908,6 +931,7 @@ export function EmailList({
                   onToggleStar={handleToggleStar}
                   onRowClick={handleRowClick}
                   folderName={folderName}
+                  t={t}
                 />
               ))}
             </div>
@@ -924,10 +948,8 @@ export function EmailList({
       {enablePagination && (
         <div className="mt-auto border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex-shrink-0 z-10">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3">
-            {/* ✅ this is where you said “add it here” */}
             <div className="text-sm text-slate-600 dark:text-slate-400 font-medium">
               {pageRange}
-               
             </div>
 
             <div className="flex items-center gap-1">
@@ -939,9 +961,11 @@ export function EmailList({
                 className="h-8 px-3 text-sm"
               >
                 <ChevronLeft className="h-4 w-4 mr-1" />
-                Newer
+                {t("email.pagination.newer", "Newer")}
               </Button>
+
               <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-1" />
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -949,7 +973,7 @@ export function EmailList({
                 onClick={loadNextPage}
                 className="h-8 px-3 text-sm"
               >
-                Older
+                {t("email.pagination.older", "Older")}
                 <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             </div>

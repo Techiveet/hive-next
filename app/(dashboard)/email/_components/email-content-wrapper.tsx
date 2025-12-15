@@ -18,7 +18,11 @@ import { deleteEmailsAction } from "../email-actions";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "@/lib/hooks/use-translation";
 
+// -----------------------------------------------------------------------------
+// Helpers
+// -----------------------------------------------------------------------------
 const isTypingTarget = (e: KeyboardEvent) => {
   const el = e.target as HTMLElement | null;
   if (!el) return false;
@@ -54,18 +58,25 @@ const formatBytes = (bytes?: number | null): string => {
 };
 
 function EmailAttachments({ attachments }: { attachments: ListAttachment[] }) {
+  const { t } = useTranslation();
+
   if (!attachments || attachments.length === 0) return null;
 
   const totalSize = attachments.reduce((sum, a) => sum + (a.size ?? 0), 0);
+  const totalSizeLabel = formatBytes(totalSize) || "—";
 
   return (
     <div className="mt-10 print:hidden">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-          Attachments ({attachments.length})
+          {t("email.attachments.titleWithCount", "Attachments ({count})").replace(
+            "{count}",
+            String(attachments.length)
+          )}
         </h3>
         <span className="text-[11px] text-slate-400">
-          Total size: {formatBytes(totalSize) || "—"}
+          {t("email.attachments.totalSizeLabel", "Total size: {size}")
+            .replace("{size}", totalSizeLabel)}
         </span>
       </div>
 
@@ -96,7 +107,7 @@ function EmailAttachments({ attachments }: { attachments: ListAttachment[] }) {
                   <div className="flex justify-end p-2">
                     <span className="inline-flex items-center gap-1 rounded-full bg-black/60 px-2 py-1 text-[10px] text-white">
                       <Download className="h-3 w-3" />
-                      Download
+                      {t("common.download", "Download")}
                     </span>
                   </div>
                   <div className="px-3 pb-2 flex items-center justify-between gap-2 text-[11px] text-white">
@@ -105,7 +116,7 @@ function EmailAttachments({ attachments }: { attachments: ListAttachment[] }) {
                       <span className="truncate">{att.name}</span>
                     </div>
                     <span className="shrink-0 opacity-80">
-                      {sizeLabel || att.mimeType || "Image"}
+                      {sizeLabel || att.mimeType || t("email.attachments.image", "Image")}
                     </span>
                   </div>
                 </div>
@@ -147,12 +158,12 @@ function EmailAttachments({ attachments }: { attachments: ListAttachment[] }) {
               </div>
               <div className="flex items-center justify-between text-[11px] text-slate-400">
                 <span className="truncate">
-                  {att.mimeType || "File"}
+                  {att.mimeType || t("email.attachments.file", "File")}
                   {sizeLabel && ` · ${sizeLabel}`}
                 </span>
                 <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                   <Download className="h-3 w-3" />
-                  Download
+                  {t("common.download", "Download")}
                 </span>
               </div>
             </a>
@@ -195,6 +206,7 @@ export function EmailContentWrapper({
   decryptionError,
 }: EmailContentWrapperProps) {
   const router = useRouter();
+  const { t } = useTranslation();
 
   const toRecipients = useMemo(
     () => email.recipients.filter((r: any) => r.type === "TO"),
@@ -208,17 +220,16 @@ export function EmailContentWrapper({
   const handleDeleteThisEmail = useCallback(async () => {
     try {
       await deleteEmailsAction([email.id], folder);
-      toast.success("Email moved to trash");
+      toast.success(t("email.toast.movedToTrash", "Email moved to trash"));
       router.push(`/email?folder=${folder}`);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new CustomEvent("refresh-sidebar-counts"));
       }
     } catch {
-      toast.error("Failed to delete email");
+      toast.error(t("email.toast.deleteFailed", "Failed to delete email"));
     }
-  }, [email.id, folder, router]);
+  }, [email.id, folder, router, t]);
 
-  // ✅ Keyboard shortcuts in detail view
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented) return;
@@ -227,21 +238,18 @@ export function EmailContentWrapper({
 
       const key = e.key.toLowerCase();
 
-      // Back to list
       if (key === "backspace" || key === "u") {
         e.preventDefault();
         router.back();
         return;
       }
 
-      // Delete (Gmail-like)
       if (e.key === "#" || (e.key === "3" && e.shiftKey)) {
         e.preventDefault();
         handleDeleteThisEmail();
         return;
       }
 
-      // Compose
       if (key === "c") {
         e.preventDefault();
         window.dispatchEvent(new CustomEvent("open-compose"));
@@ -258,13 +266,16 @@ export function EmailContentWrapper({
         <div className="flex flex-col items-center justify-center p-8 bg-rose-50 dark:bg-rose-900/50 rounded-lg border border-rose-300 dark:border-rose-700/50 my-8">
           <Lock className="h-10 w-10 text-rose-500 mb-3" />
           <h3 className="text-xl font-semibold mb-2 text-rose-700 dark:text-rose-300">
-            Automatic Decryption Failed
+            {t("email.decryptFailed.title", "Automatic Decryption Failed")}
           </h3>
           <p className="text-sm text-center text-muted-foreground mb-6">
-            This message is E2EE, but the server failed to decrypt it automatically.
+            {t(
+              "email.decryptFailed.desc",
+              "This message is E2EE, but the server failed to decrypt it automatically."
+            )}
           </p>
           <p className="text-xs text-center text-rose-500 dark:text-rose-400 font-mono p-2 bg-rose-100 dark:bg-rose-900 rounded">
-            Error: {decryptionError}
+            {t("email.decryptFailed.errorPrefix", "Error:")} {decryptionError}
           </p>
         </div>
       </div>
@@ -290,7 +301,7 @@ export function EmailContentWrapper({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={printLogoUrl}
-            alt="Company Logo"
+            alt={t("email.print.logoAlt", "Company Logo")}
             style={{
               maxHeight: "60px",
               maxWidth: "250px",
@@ -320,7 +331,7 @@ export function EmailContentWrapper({
               <div className="flex flex-col gap-1">
                 <div className="flex flex-wrap items-baseline gap-2">
                   <span className="text-base font-bold text-slate-900 dark:text-white print:text-black">
-                    {email.sender.name || "Unknown"}
+                    {email.sender.name || t("email.common.unknown", "Unknown")}
                   </span>
                   <span className="text-sm text-slate-500 dark:text-slate-400 print:text-slate-600">
                     &lt;{email.sender.email}&gt;
@@ -329,17 +340,17 @@ export function EmailContentWrapper({
 
                 <div className="text-sm text-slate-600 dark:text-slate-400 print:text-slate-800">
                   <span className="font-semibold text-slate-700 dark:text-slate-300 print:text-black">
-                    To:{" "}
+                    {t("email.detail.to", "To:")}{" "}
                   </span>
                   {toRecipients.length > 0
                     ? toRecipients.map((r: any) => r.user.name || r.user.email).join(", ")
-                    : "Undisclosed recipients"}
+                    : t("email.detail.undisclosedRecipients", "Undisclosed recipients")}
                 </div>
 
                 {ccRecipients.length > 0 && (
                   <div className="text-sm text-slate-600 dark:text-slate-400 print:text-slate-800">
                     <span className="font-semibold text-slate-700 dark:text-slate-300 print:text-black">
-                      Cc:{" "}
+                      {t("email.detail.cc", "Cc:")}{" "}
                     </span>
                     {ccRecipients.map((r: any) => r.user.name || r.user.email).join(", ")}
                   </div>

@@ -14,5 +14,373 @@
   "sidebar.settings": "ቅንብሮች",
   "sidebar.tenants": "ተከራዮች",
   "validation.email": "እባክዎ ትክክለኛ ኢሜይል ያስገቡ",
-  "validation.required": "ይህ መስክ ያስፈልጋል"
+  "validation.required": "ይህ መስክ ያስፈልጋል",
+
+  "email.sidebar.title": "መልዕክቶች",
+  "email.sidebar.all": "ሁሉም መልዕክቶች",
+  "email.sidebar.inbox": "ገቢ መልዕክቶች",
+  "email.sidebar.sent": "የተላኩ",
+  "email.sidebar.drafts": "ረቂቆች",
+  "email.sidebar.archive": "የተቀመጡ",
+  "email.sidebar.starred": "ተወዳጅ",
+  "email.sidebar.spam": "ስፓም",
+  "email.sidebar.trash": "ቆሻሻ",
+
+  "email.shortcuts.title": "አቋራጮች",
+  "email.shortcuts.nextPrev": "ቀጣይ / ቀዳሚ",
+  "email.shortcuts.select": "መልዕክት ምረጥ",
+  "email.shortcuts.star": "ኮከብ አክል / አስወግድ",
+  "email.shortcuts.archive": "አስቀምጥ",
+  "email.shortcuts.delete": "ሰርዝ (ወደ ቆሻሻ አንቀሳቅስ)",
+  "email.shortcuts.spam": "እንደ ስፓም ምልክት አድርግ",
+  "email.shortcuts.search": "ፍለጋን አተኩር",
+  "email.shortcuts.compose": "አዲስ መልዕክት ጻፍ",
+  "email.shortcuts.tip": "ማስታወሻ፡ አቋራጮቹ በኢንፑት/ኤዲተር ውስጥ ሳይጻፉ ሲሆን ብቻ ይሰራሉ።",
+
+  "email.search.placeholder": "መልዕክቶችን ፈልግ...",
+
+  "email.list.recipients": "ተቀባዮች",
+  "email.list.toPrefix": "ለ፡ ",
+  "email.list.unknown": "ያልታወቀ",
+  "email.list.recently": "በቅርቡ",
+  "email.list.noSubject": "(ርዕስ የለም)",
+
+  "email.list.selectAll": "ሁሉንም ምረጥ",
+  "email.list.selectedCount": "{count} ተመርጠዋል",
+
+  "email.actions.markRead": "እንደ ተነበበ ምልክት አድርግ",
+  "email.actions.markUnread": "እንደ ያልተነበበ ምልክት አድርግ",
+  "email.actions.archive": "አስቀምጥ",
+  "email.actions.spam": "እንደ ስፓም ምልክት አድርግ",
+  "email.actions.delete": "ሰርዝ",
+
+  "email.empty.notFoundTitle": "ምንም አልተገኘም",
+  "email.empty.notFoundHint": "ሌላ የፍለጋ ቃል ሞክር",
+  "email.empty.title": "መልዕክት የለም",
+  "email.empty.inbox": "ገቢ መልዕክትዎ ባዶ ነው",
+  "email.empty.sent": "እስካሁን የተላከ መልዕክት የለም",
+  "email.empty.generic": "ይህ አቃፊ ባዶ ነው",
+
+  "email.pagination.newer": "አዲስ",
+  "email.pagination.older": "አሮጌ",
+
+  "email.toast.loadFailed": "መልዕክቶችን መጫን አልተቻለም።",
+  "email.toast.starFailed": "የኮከብ ሁኔታ ማዘመን አልተቻለም",
+  "email.toast.actionFailed": "እርምጃው አልተሳካም። እባክዎ እንደገና ይሞክሩ።",
+
+  "email.compose.button": "መልዕክት ጻፍ",
+  "email.compose.newMessage": "አዲስ መልዕክት",
+  "email.compose.editDraft": "ረቂቅ አርም",
+
+  "email.compose.to": "ለ",
+  "email.compose.cc": "ቅጂ",
+  "email.compose.bcc": "የተሰወረ ቅጂ",
+  "email.compose.showCcBcc": "CC/BCC አሳይ",
+
+  "email.compose.addRecipient": "ተቀባይ ጨምር",
+  "email.compose.searchUser": "ተጠቃሚ ፈልግ...",
+  "email.compose.noUserFound": "ተጠቃሚ አልተገኘም።",
+
+  "email.compose.subject.placeholder": "ርዕስ",
+
+  "email.compose.editor.placeholder": "መልዕክትዎን እዚህ ይጻፉ... ('@' በመጻፍ ሰውን መጥራት ይችላሉ)",
+
+  "email.compose.e2ee.activeNotice": "E2EE ንቁ ነው፡ የመልዕክቱ ይዘት ከመላክ በፊት ይታሸጋል። አባሪዎች አይታሸጉም።",
+  "email.compose.e2ee.activeLabel": "መጨረሻ-እስከ-መጨረሻ ማስጠበቂያ (PGP) ንቁ ነው",
+  "email.compose.e2ee.disabledLabel": "ማስጠበቂያ ተሰናክሏል (ለአንዳንድ ተቀባዮች ቁልፍ ይጎድላል)",
+
+  "email.compose.attachments.willBeSent": "{count} አባሪ{plural} ይላካል",
+
+  "email.compose.saveDraft": "ረቂቅ አስቀምጥ",
+  "email.compose.updateDraft": "ረቂቅ አዘምን",
+  "email.compose.saving": "በማስቀመጥ ላይ...",
+  "email.compose.updating": "በማዘመን ላይ...",
+
+  "email.compose.discard": "ተው",
+  "email.compose.send": "ላክ",
+  "email.compose.sending": "በመላክ ላይ...",
+
+  "email.compose.validation.recipientRequired": "ቢያንስ አንድ ተቀባይ ጨምር",
+  "email.compose.validation.subjectRequired": "ርዕስ ያስፈልጋል",
+
+  "email.compose.encrypt.success": "መልዕክቱ በተሳካ ሁኔታ ተመስጠረ!",
+  "email.compose.encrypt.senderKeyMissing": "የላኪው ቁልፍ የለም። በ'Sent' ላይ እንዳትታገዱ ማስጠበቂያ ተዘልሏል።",
+  "email.compose.encrypt.failedSendingUnencrypted": "ማስጠበቂያ አልተሳካም። ሳይታሸግ ይላካል።",
+
+  "email.compose.toast.sent": "ተልኳል!",
+  "email.compose.toast.draftSaved": "ረቂቅ ተቀምጧል",
+  "email.compose.toast.draftUpdated": "ረቂቅ ተዘምኗል",
+  "email.compose.toast.openDraftFailed": "ረቂቅ መክፈት አልተቻለም",
+
+  "email.compose.imageEditor.title": "ምስል አርም",
+  "email.compose.imageEditor.close": "ዝጋ",
+  "email.compose.imageEditor.altLabel": "Alt ጽሑፍ (ለተደራሽነት)",
+  "email.compose.imageEditor.altPlaceholder": "ምስሉን ግለጽ",
+  "email.compose.imageEditor.remove": "ምስል አስወግድ",
+  "email.compose.imageEditor.cancel": "ሰርዝ",
+  "email.compose.imageEditor.apply": "ተግብር",
+
+  "email.toolbar.badge.archived": "የተቀመጡ",
+  "email.toolbar.badge.trashed": "ወደ ቆሻሻ የተወረዱ",
+  "email.toolbar.badge.starred": "ተወዳጅ",
+
+  "email.toolbar.action.archive": "አስቀምጥ",
+  "email.toolbar.action.moveToInbox": "ወደ ገቢ መልዕክቶች መልስ",
+  "email.toolbar.action.moveToTrash": "ወደ ቆሻሻ አንቀሳቅስ",
+  "email.toolbar.action.deleteForever": "ለዘላለም ሰርዝ",
+
+  "email.toolbar.button.toInbox": "ወደ ገቢ",
+
+  "email.toolbar.toast.archived": "ተቀምጧል",
+  "email.toolbar.toast.movedToInbox": "ወደ ገቢ ተመልሷል",
+  "email.toolbar.toast.movedToTrash": "ወደ ቆሻሻ ተንቀሳቅሷል",
+  "email.toolbar.toast.deletedForever": "ለዘላለም ተሰርዟል",
+ 
+   "common.download": "አውርድ",
+
+  "email.common.unknown": "ያልታወቀ",
+
+  "email.attachments.titleWithCount": "ተያያዥ ፋይሎች ({count})",
+  "email.attachments.totalSizeLabel": "ጠቅላላ መጠን፡ {size}",
+  "email.attachments.file": "ፋይል",
+  "email.attachments.image": "ምስል",
+
+  "email.toast.movedToTrash": "መልዕክቱ ወደ ቆሻሻ ተንቀሳቅሷል",
+  "email.toast.deleteFailed": "መልዕክቱን መሰረዝ አልተሳካም",
+
+  "email.decryptFailed.title": "ራስ-ሰር ዲክሪፕሽን አልተሳካም",
+  "email.decryptFailed.desc": "ይህ መልዕክት E2EE ነው፣ ነገር ግን ሰርቨሩ ራስ-ሰር ለመፍታት አልቻለም።",
+  "email.decryptFailed.errorPrefix": "ስህተት፡",
+
+  "email.print.logoAlt": "የኩባንያ ሎጎ",
+
+  "email.detail.to": "ለ፡",
+  "email.detail.cc": "ቅጂ፡",
+  "email.detail.undisclosedRecipients": "ያልተገለጹ ተቀባዮች",
+
+   "common.back": "ተመለስ",
+  "common.delete": "ሰርዝ",
+  "common.reload": "እንደገና አስጀምር",
+  "common.print": "አትም",
+  "common.refreshed": "ታድሷል",
+
+  "email.actions.reply": "መልስ",
+  "email.actions.forward": "ወደፊት ላክ",
+  "email.actions.replyAll": "ለሁሉም መልስ",
+
+  
+  "email.toast.markedRead": "እንደ ተነበበ ተምልክቷል",
+  "email.toast.markedUnread": "እንደ ያልተነበበ ተምልክቷል",
+  "email.toast.readUpdateFailed": "የንባብ ሁኔታን ማዘመን አልተሳካም",
+  "email.toast.markedSpam": "እንደ ስፓም ተምልክቷል",
+  "email.toast.spamFailed": "እንደ ስፓም ማስመልከት አልተሳካም",
+  "email.toast.deletedForever": "ለዘላለም ተሰርዟል",
+
+  "email.tooltip.readNotAvailable": "ለተላኩ/ረቂቆች የንባብ ሁኔታ አይገኝም",
+  "email.tooltip.markUnread": "እንደ ያልተነበበ ምልክት አድርግ",
+  "email.tooltip.markRead": "እንደ ተነበበ ምልክት አድርግ",
+  "email.tooltip.markSpam": "እንደ ስፓም ምልክት አድርግ",
+
+  "email.reply.on": "በ",
+  "email.reply.wrote": "ጻፈ፦",
+  "email.forward.forwardedMessage": "ወደፊት የተላከ መልዕክት",
+  "email.forward.from": "ከ፦",
+  "email.forward.date": "ቀን፦",
+  "email.forward.subject": "ርዕስ፦",
+
+  "common.failed": "አልተሳካም",
+  "common.working": "በመስራት ላይ...",
+
+  "email.spam.whyTitle": "ለምን ይህ መልዕክት በስፓም ውስጥ ነው?",
+  "email.spam.defaultReason": "ይህ መልዕክት የስፓም ምልክቶችን ተመሳሳይ ነበር።",
+  "email.spam.defaultReasonLong": "ይህ መልዕክት እንደ ስፓም የተለዩ ንድፎችን ይመሳሰላል።",
+  "email.spam.reportNotSpam": "ስፓም አይደለም ብለህ ሪፖርት አድርግ",
+  "email.spam.score": "መለኪያ: {{score}}",
+
+  "email.spam.toast.movedToInbox": "ወደ ገቢ ተንቀሳቅሷል",
+  "email.spam.toast.reportFailed": "ስፓም አይደለም ማለት ሪፖርት ማድረግ አልተሳካም",
+
+  "email.detail.toLabel": "ለ:",
+  "email.detail.decryptionFailedTitle": "መፍታት አልተሳካም",
+
+  "email.attachments.title": "ተያያዥ ፋይሎች",
+  "email.attachments.download": "አውርድ",
+
+  "email.page.placeholder.title": "ለማንበብ መልዕክት ይምረጡ",
+  "email.page.placeholder.subtitle": "ዝርዝሩ ውስጥ ካሉ መልዕክቶች አንዱን በመምረጥ ዝርዝሩን ይመልከቱ።",
+ 
+  "email.errors.E_EMAIL_MASTER_KEY_MISSING": "የPGP ዋና ቁልፍ በሰርቨር ላይ አልተዋቀረም።",
+  "email.errors.E_EMAIL_UNAUTHORIZED": "ፍቃድ የለዎትም።",
+  "email.errors.E_EMAIL_NO_PRIVATE_KEY": "ለራስ-ሰር ዲክሪፕሽን የተቀመጠ የግል ቁልፍ የለዎትም።",
+  "email.errors.E_EMAIL_INVALID_ENCRYPTED_FORMAT": "የተሰወረ መልዕክት ፎርማት ልክ አይደለም፤ መልዕክቱ ሊበላሽ ይችላል።",
+  "email.errors.E_EMAIL_DECRYPT_FAILED": "ዲክሪፕሽን አልተሳካም።",
+  "email.errors.E_EMAIL_KEY_VERIFY_FAILED": "የPGP ቁልፎችዎን ማረጋገጥ አልተሳካም።",
+  "email.errors.E_EMAIL_NO_KEYS": "ለአካውንትዎ ቁልፎች አልተገኙም።",
+  "email.errors.E_EMAIL_KEY_MISMATCH": "የፐብሊክ/ፕራይቬት ቁልፎችዎ አይዛመዱም።",
+
+ 
+  "email.folder.inbox": "የገቢ መልዕክቶች",
+  "email.folder.sent": "የተላኩ",
+  "email.folder.drafts": "ረቂቆች",
+  "email.folder.archive": "የተመዘገቡ",
+  "email.folder.starred": "ባለኮከብ",
+  "email.folder.spam": "ስፓም",
+  "email.folder.trash": "መጣያ",
+  "email.folder.all": "ሁሉም መልዕክቶች",
+ 
+ 
+
+  "rte.placeholder": "እዚህ ይጻፉ...",
+  "rte.mention.noResult": "ምንም አልተገኘም",
+
+  "rte.font.sans": "ሳንስ-ሰሪፍ (መደበኛ)",
+  "rte.font.serif": "ሰሪፍ (Georgia)",
+  "rte.font.mono": "ሞኖስፔስ (ኮድ)",
+  "rte.font.cursive": "ኩርሲቭ",
+
+  "rte.size.small": "ትንሽ",
+  "rte.size.normal": "መደበኛ",
+  "rte.size.large": "ትልቅ",
+  "rte.size.huge": "በጣም ትልቅ",
+
+  "rte.lineHeight.single": "ነጠላ",
+  "rte.lineHeight.double": "ድርብ",
+
+  "rte.actions.resetSize": "መጠን አብራር",
+  "rte.actions.resetFont": "ፎንት አብራር",
+  "rte.actions.resetLineHeight": "ከፍታ አብራር",
+
+  "rte.heading.p": "ፒ",
+  "rte.heading.paragraph": "አንቀጽ",
+  "rte.heading.level": "ርዕስ {{level}}",
+
+  "rte.prompts.url": "URL",
+  "rte.prompts.videoUrl": "የቪዲዮ URL ያስገቡ (YouTube/Vimeo/ቀጥታ .mp4).\nባዶ ይተዉ ከፋይል ማኔጀር ለመምረጥ።",
+  "rte.file.defaultName": "አባሪ-አውርድ",
+
+  "rte.titles.fontSize": "የፎንት መጠን",
+  "rte.titles.fontFamily": "የፎንት ዓይነት",
+  "rte.titles.headingStyle": "የርዕስ ቅጥ",
+  "rte.titles.lineHeight": "የመስመር ከፍታ",
+
+  "rte.titles.bold": "ጠንካራ",
+  "rte.titles.italic": "ኢታሊክ",
+  "rte.titles.underline": "ስርመስመር",
+  "rte.titles.strike": "መስመር መሻሻል",
+  "rte.titles.highlight": "ማብራት",
+  "rte.titles.yellowHighlight": "ቢጫ ማብራት",
+
+  "rte.titles.subscript": "ንዑስ ጽሑፍ (x₂)",
+  "rte.titles.superscript": "ላይኛ ጽሑፍ (x²)",
+  "rte.titles.setLink": "ሊንክ አክል",
+  "rte.titles.unlink": "ሊንክ አስወግድ",
+
+  "rte.titles.bulletedList": "ነጥብ ዝርዝር",
+  "rte.titles.numberedList": "ቁጥር ዝርዝር",
+  "rte.titles.blockquote": "ጥቅስ",
+  "rte.titles.codeBlock": "ኮድ ብሎክ",
+
+  "rte.titles.alignLeft": "ግራ አስተካክል",
+  "rte.titles.alignCenter": "መሃል አስተካክል",
+  "rte.titles.alignRight": "ቀኝ አስተካክል",
+  "rte.titles.justify": "አስተካክል (Justify)",
+
+  "rte.titles.insertImage": "ምስል አክል",
+  "rte.titles.editImage": "የተመረጠ ምስል አስተካክል",
+  "rte.titles.selectImageToEdit": "ለማስተካከል ምስል ይምረጡ",
+  "rte.titles.insertFile": "ፋይል አክል",
+  "rte.titles.insertVideo": "ቪዲዮ አክል",
+
+  "rte.titles.horizontalRule": "አግድም መስመር",
+  "rte.titles.clearFormatting": "ቅጥ አጥፋ",
+  "rte.titles.undo": "ተመለስ",
+  "rte.titles.redo": "ደግመህ አድርግ",
+
+  "rte.counter.characters": "{{count}} / {{max}} ቁምፊዎች",
+  "rte.counter.words": "{{count}} ቃላት",
+
+ 
+  "editor": {
+    "placeholder": "ነገር ጻፍ...",
+    "mention": {
+      "noResult": "ምንም አልተገኘም"
+    },
+    "prompts": {
+      "url": "ዩአርኤል (URL)",
+      "video": "የቪዲዮ ሊንክ ያስገቡ (YouTube/Vimeo/ቀጥታ .mp4).\nባዶ ብትተዉ ከፋይል ማኔጀር ይመርጣሉ።"
+    },
+    "fallbacks": {
+      "downloadAttachment": "አባሪ-ፋይል"
+    },
+    "toolbar": {
+      "fontSize": "የፊደል መጠን",
+      "fontFamily": "የፊደል አይነት",
+      "headingStyle": "ርዕስ ቅጥ",
+      "lineHeight": "የመስመር ከፍታ",
+
+      "bold": "ወፍራም",
+      "italic": "ዝቅተኛ",
+      "underline": "መስመር ስር",
+      "strikethrough": "መስመር መቁረጥ",
+      "highlight": "ማብራት",
+      "yellowHighlight": "ቢጫ ማብራት",
+
+      "subscript": "ንዑስ ፊደል (x₂)",
+      "superscript": "ላይኛ ፊደል (x²)",
+      "unlink": "ሊንክ ማስወገድ",
+      "setLink": "ሊንክ ማስቀመጥ",
+
+      "bulletedList": "ነጥብ ዝርዝር",
+      "numberedList": "ቁጥር ዝርዝር",
+      "blockquote": "ጥቅስ",
+      "codeBlock": "ኮድ ብሎክ",
+
+      "alignLeft": "ግራ ማሰራጨት",
+      "alignCenter": "መሃል ማሰራጨት",
+      "alignRight": "ቀኝ ማሰራጨት",
+      "justify": "ማስተካከል",
+
+      "insertImage": "ምስል ከፋይል ማኔጀር ጨምር",
+      "editSelectedImage": "የተመረጠ ምስል አርትዕ",
+      "selectImageToEdit": "ለማርትዕ ምስል ይምረጡ",
+      "insertFile": "ፋይል ከፋይል ማኔጀር ጨምር",
+      "insertVideo": "ቪዲዮ ጨምር (URL ወይም ፋይል ማኔጀር)",
+
+      "horizontalRule": "አግድም መስመር",
+      "clearFormatting": "ቅርጸ-ቅጥ አጥፋ"
+    },
+    "options": {
+      "sizes": {
+        "small": "ትንሽ",
+        "normal": "መደበኛ",
+        "large": "ትልቅ",
+        "huge": "በጣም ትልቅ",
+        "reset": "[መጠን አትክክል]"
+      },
+      "fonts": {
+        "sans": "Sans-Serif (መደበኛ)",
+        "serif": "Serif (Georgia)",
+        "mono": "Monospace (Code)",
+        "cursive": "Cursive",
+        "reset": "[ፊደል አትክክል]"
+      },
+      "heading": {
+        "paragraph": "P አንቀጽ",
+        "h": "H{level} ርዕስ {level}"
+      },
+      "lineHeights": {
+        "single": "ነጠላ",
+        "oneHalf": "1.5",
+        "double": "ድርብ",
+        "reset": "[ከፍታ አትክክል]"
+      }
+    },
+    "counter": {
+      "characters": "{count} / {max} ፊደሎች",
+      "words": "{count} ቃላት"
+    }
+  }
+ 
+
+
 }

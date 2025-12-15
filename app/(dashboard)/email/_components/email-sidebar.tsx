@@ -11,13 +11,14 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
-import { startTransition, useEffect, useState } from "react";
+import React, { startTransition, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { getSidebarCountsAction } from "../email-actions";
 import { io } from "socket.io-client";
+import { useTranslation } from "@/lib/hooks/use-translation"; // ✅ localization
 
 export type FolderCounts = {
   all: number;
@@ -68,6 +69,9 @@ export function EmailSidebar({ initialCounts, userId }: EmailSidebarProps) {
   const searchParams = useSearchParams();
   const activeFolder = searchParams.get("folder") || "inbox";
 
+  // ✅ translation
+  const { t } = useTranslation();
+
   const [counts, setCounts] = useState<FolderCounts>(initialCounts);
 
   const refreshCounts = async () => {
@@ -108,71 +112,75 @@ export function EmailSidebar({ initialCounts, userId }: EmailSidebarProps) {
     return () => socket.disconnect();
   }, [userId, router]);
 
-  const navItems = [
-    {
-      label: "All Mails",
-      icon: LayoutGrid,
-      id: "all",
-      count: counts.all,
-      color: "text-indigo-600 dark:text-indigo-400",
-    },
-    {
-      label: "Inbox",
-      icon: Inbox,
-      id: "inbox",
-      count: counts.inbox,
-      color: "text-pink-600 dark:text-pink-400",
-    },
-    {
-      label: "Sent",
-      icon: Send,
-      id: "sent",
-      count: counts.sent,
-      color: "text-emerald-500 dark:text-emerald-400",
-    },
-    {
-      label: "Drafts",
-      icon: File,
-      id: "drafts",
-      count: counts.drafts,
-      color: "text-blue-500 dark:text-blue-400",
-    },
-    {
-      label: "Archived",
-      icon: Archive,
-      id: "archive",
-      count: counts.archive,
-      color: "text-slate-500 dark:text-slate-400",
-    },
-    {
-      label: "Starred",
-      icon: Star,
-      id: "starred",
-      count: counts.starred,
-      color: "text-amber-500",
-    },
-    {
-      label: "Spam",
-      icon: ShieldAlert,
-      id: "spam",
-      count: counts.spam,
-      color: "text-orange-600 dark:text-orange-400",
-    },
-    {
-      label: "Trash",
-      icon: Trash2,
-      id: "trash",
-      count: counts.trash,
-      color: "text-red-500",
-    },
-  ];
+  // ✅ localized labels
+  const navItems = useMemo(
+    () => [
+      {
+        label: t("email.sidebar.all", "All Mails"),
+        icon: LayoutGrid,
+        id: "all",
+        count: counts.all,
+        color: "text-indigo-600 dark:text-indigo-400",
+      },
+      {
+        label: t("email.sidebar.inbox", "Inbox"),
+        icon: Inbox,
+        id: "inbox",
+        count: counts.inbox,
+        color: "text-pink-600 dark:text-pink-400",
+      },
+      {
+        label: t("email.sidebar.sent", "Sent"),
+        icon: Send,
+        id: "sent",
+        count: counts.sent,
+        color: "text-emerald-500 dark:text-emerald-400",
+      },
+      {
+        label: t("email.sidebar.drafts", "Drafts"),
+        icon: File,
+        id: "drafts",
+        count: counts.drafts,
+        color: "text-blue-500 dark:text-blue-400",
+      },
+      {
+        label: t("email.sidebar.archive", "Archived"),
+        icon: Archive,
+        id: "archive",
+        count: counts.archive,
+        color: "text-slate-500 dark:text-slate-400",
+      },
+      {
+        label: t("email.sidebar.starred", "Starred"),
+        icon: Star,
+        id: "starred",
+        count: counts.starred,
+        color: "text-amber-500",
+      },
+      {
+        label: t("email.sidebar.spam", "Spam"),
+        icon: ShieldAlert,
+        id: "spam",
+        count: counts.spam,
+        color: "text-orange-600 dark:text-orange-400",
+      },
+      {
+        label: t("email.sidebar.trash", "Trash"),
+        icon: Trash2,
+        id: "trash",
+        count: counts.trash,
+        color: "text-red-500",
+      },
+    ],
+    [counts, t]
+  );
 
   return (
     <div className="flex h-full flex-col rounded-xl bg-white shadow-sm border border-slate-200 dark:bg-slate-950 dark:border-slate-800 overflow-hidden">
       {/* Header */}
       <div className="p-6 pb-2 flex-shrink-0">
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-          Mails
+          {t("email.sidebar.title", "Mails")}
         </h3>
       </div>
 
@@ -229,7 +237,7 @@ export function EmailSidebar({ initialCounts, userId }: EmailSidebarProps) {
             <div className="flex items-center gap-2 mb-3">
               <Keyboard className="h-4 w-4 text-slate-400 dark:text-slate-500" />
               <p className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                Shortcuts
+                {t("email.shortcuts.title", "Shortcuts")}
               </p>
             </div>
 
@@ -241,28 +249,49 @@ export function EmailSidebar({ initialCounts, userId }: EmailSidebarProps) {
                     <Keycap>k</Keycap>
                   </>
                 }
-                label="Next / Previous"
+                label={t("email.shortcuts.nextPrev", "Next / Previous")}
               />
-              <ShortcutRow keys={<Keycap>x</Keycap>} label="Select email" />
-              <ShortcutRow keys={<Keycap>s</Keycap>} label="Star / unstar" />
-              <ShortcutRow keys={<Keycap>e</Keycap>} label="Archive" />
+              <ShortcutRow
+                keys={<Keycap>x</Keycap>}
+                label={t("email.shortcuts.select", "Select email")}
+              />
+              <ShortcutRow
+                keys={<Keycap>s</Keycap>}
+                label={t("email.shortcuts.star", "Star / unstar")}
+              />
+              <ShortcutRow
+                keys={<Keycap>e</Keycap>}
+                label={t("email.shortcuts.archive", "Archive")}
+              />
               <ShortcutRow
                 keys={<Keycap>#</Keycap>}
-                label="Delete (move to trash)"
+                label={t("email.shortcuts.delete", "Delete (move to trash)")}
               />
-              <ShortcutRow keys={<Keycap>!</Keycap>} label="Mark as spam" />
-              <ShortcutRow keys={<Keycap>/</Keycap>} label="Focus search" />
-              <ShortcutRow keys={<Keycap>c</Keycap>} label="Compose" />
+              <ShortcutRow
+                keys={<Keycap>!</Keycap>}
+                label={t("email.shortcuts.spam", "Mark as spam")}
+              />
+              <ShortcutRow
+                keys={<Keycap>/</Keycap>}
+                label={t("email.shortcuts.search", "Focus search")}
+              />
+              <ShortcutRow
+                keys={<Keycap>c</Keycap>}
+                label={t("email.shortcuts.compose", "Compose")}
+              />
             </div>
 
             <div className="mt-3 text-[10px] text-slate-400 dark:text-slate-500">
-              Tip: shortcuts work when you’re not typing in an input/editor.
+              {t(
+                "email.shortcuts.tip",
+                "Tip: shortcuts work when you’re not typing in an input/editor."
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* ✅ Reuse the exact same scrollbar styles */}
+      {/* ✅ Reuse the exact same scrollbar styles (same class name as email list) */}
       <style jsx global>{`
         .email-list-scrollbar {
           scroll-behavior: smooth;

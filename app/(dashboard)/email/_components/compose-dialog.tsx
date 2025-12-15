@@ -1,7 +1,7 @@
 // app/(dashboard)/email/_components/compose-dialog.tsx
 "use client";
 
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Lock, Plus, X } from "lucide-react";
 import {
   Command,
   CommandEmpty,
@@ -17,7 +17,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Lock, Plus, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import React, { useEffect, useMemo, useState, useTransition } from "react";
 import {
@@ -40,6 +39,7 @@ import { Input } from "@/components/ui/input";
 import { pgpEncrypt } from "@/lib/pgp-utils";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { useTranslation } from "@/lib/hooks/use-translation";
 
 // -----------------------------------------------------------------------------
 // RECIPIENT INPUT COMPONENT
@@ -55,6 +55,7 @@ function RecipientInput({
   selectedIds: string[];
   onChange: (ids: string[]) => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
 
   const availableUsers = users.filter((u: any) => !selectedIds.includes(u.id));
@@ -88,6 +89,8 @@ function RecipientInput({
                     onChange(selectedIds.filter((x) => x !== id));
                   }}
                   className="ml-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 p-0.5 transition-colors"
+                  aria-label={t("common.cancel", "Cancel")}
+                  title={t("common.cancel", "Cancel")}
                 >
                   <X className="h-3 w-3 text-slate-500 hover:text-red-500" />
                 </button>
@@ -95,7 +98,7 @@ function RecipientInput({
             );
           })}
 
-          {/* ✅ Searchable "Add recipient" */}
+          {/* Searchable "Add recipient" */}
           <Popover open={open} onOpenChange={setOpen}>
             <PopoverTrigger asChild>
               <button
@@ -109,27 +112,32 @@ function RecipientInput({
                   inline-flex items-center gap-1
                 "
               >
-                + Add recipient <ChevronsUpDown className="h-3.5 w-3.5 opacity-70" />
+                + {t("email.compose.addRecipient", "Add recipient")}
+                <ChevronsUpDown className="h-3.5 w-3.5 opacity-70" />
               </button>
             </PopoverTrigger>
 
             <PopoverContent className="p-0 w-[320px]">
               <Command>
-                <CommandInput placeholder="Search user..." />
+                <CommandInput
+                  placeholder={t("email.compose.searchUser", "Search user...")}
+                />
                 <CommandList className="max-h-64">
-                  <CommandEmpty>No user found.</CommandEmpty>
+                  <CommandEmpty>
+                    {t("email.compose.noUserFound", "No user found.")}
+                  </CommandEmpty>
 
                   <CommandGroup>
                     {availableUsers.map((u: any) => {
-                      const label = `${u.name ?? ""} (${u.email})`.trim();
+                      const rowLabel = `${u.name ?? ""} (${u.email})`.trim();
                       return (
                         <CommandItem
                           key={u.id}
-                          value={label}
+                          value={rowLabel}
                           onSelect={() => addRecipient(u.id)}
                           className="flex items-center justify-between"
                         >
-                          <span className="truncate">{label}</span>
+                          <span className="truncate">{rowLabel}</span>
                           <Check className="h-4 w-4 opacity-0" />
                         </CommandItem>
                       );
@@ -149,7 +157,7 @@ function RecipientInput({
 // TYPES
 // -----------------------------------------------------------------------------
 type ComposeAttachment = {
-  id: string; // ✅ fileId
+  id: string; // fileId
   type: "IMAGE" | "VIDEO" | "FILE";
   url: string;
   name: string;
@@ -184,6 +192,7 @@ export function ComposeDialog({
   open,
   onOpenChange,
 }: ComposeDialogProps) {
+  const { t } = useTranslation();
   const router = useRouter();
 
   const [internalOpen, setInternalOpen] = useState(false);
@@ -191,7 +200,7 @@ export function ComposeDialog({
   const setOpen = onOpenChange ?? setInternalOpen;
   const [isPending, startTransition] = useTransition();
 
-  // ✅ Draft Edit Mode
+  // Draft Edit Mode
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
 
   // Form State
@@ -204,15 +213,16 @@ export function ComposeDialog({
 
   // Encryption State
   const [isE2EE, setIsE2EE] = useState(false);
-  const [recipientPublicKeys, setRecipientPublicKeys] = useState<{
-    [key: string]: string;
-  }>({});
+  const [recipientPublicKeys, setRecipientPublicKeys] = useState<Record<string, string>>(
+    {}
+  );
 
   // Attachments & Image Editor
   const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
   const [imageEditorOpen, setImageEditorOpen] = useState(false);
-  const [imageEditorState, setImageEditorState] =
-    useState<ImageEditorState | null>(null);
+  const [imageEditorState, setImageEditorState] = useState<ImageEditorState | null>(
+    null
+  );
   const [imageEditorEditor, setImageEditorEditor] = useState<any>(null);
 
   // --- Helpers ---
@@ -236,24 +246,24 @@ export function ComposeDialog({
     });
   };
 
-  const allRecipientIds = useMemo(() => {
-    return Array.from(new Set([...toIds, ...ccIds, ...bccIds]));
-  }, [toIds, ccIds, bccIds]);
+  const allRecipientIds = useMemo(
+    () => Array.from(new Set([...toIds, ...ccIds, ...bccIds])),
+    [toIds, ccIds, bccIds]
+  );
 
-  // ✅ Load draft into composer
+  // Load draft into composer
   const loadDraftIntoComposer = async (draftId: string) => {
-    const res = await fetch(`/api/emails/drafts/${draftId}`, {
-      cache: "no-store",
-    });
+    const res = await fetch(`/api/emails/drafts/${draftId}`, { cache: "no-store" });
     const json = await res.json();
-    if (!res.ok || !json?.data)
-      throw new Error(json?.error || "Failed to load draft");
+
+    if (!res.ok || !json?.data) {
+      throw new Error(json?.error || t("email.compose.toast.openDraftFailed", "Failed to open draft"));
+    }
 
     const d = json.data;
 
     setEditingDraftId(draftId);
 
-    // If you don't store recipients in draft schema, keep empty (or adapt later)
     setToIds(d.toIds ?? []);
     setCcIds(d.ccIds ?? []);
     setBccIds(d.bccIds ?? []);
@@ -266,7 +276,7 @@ export function ComposeDialog({
       (d.attachments ?? [])
         .filter((a: any) => a?.id)
         .map((a: any) => ({
-          id: a.id, // ✅ fileId
+          id: a.id,
           url: a.url || "",
           name: a.name || "Attachment",
           mimeType: a.mimeType ?? null,
@@ -274,7 +284,6 @@ export function ComposeDialog({
         }))
     );
 
-    // Reset encryption calc on open
     setIsE2EE(false);
     setRecipientPublicKeys({});
   };
@@ -288,23 +297,17 @@ export function ComposeDialog({
     }
 
     getPublicKeysAction(allRecipientIds).then((results) => {
-      const keyMap = results.reduce(
-        (acc, user) => {
-          if (user.pgpPublicKey) {
-            acc[user.id] = user.pgpPublicKey;
-          }
-          return acc;
-        },
-        {} as { [key: string]: string }
-      );
+      const keyMap = results.reduce((acc: Record<string, string>, user: any) => {
+        if (user.pgpPublicKey) acc[user.id] = user.pgpPublicKey;
+        return acc;
+      }, {});
 
       setRecipientPublicKeys(keyMap);
-      const allHaveKeys = allRecipientIds.every((id) => keyMap[id]);
-      setIsE2EE(allHaveKeys);
+      setIsE2EE(allRecipientIds.every((id) => !!keyMap[id]));
     });
   }, [allRecipientIds]);
 
-  // ✅ Listen for Draft click event from email-list
+  // Listen for Draft click event from email-list
   useEffect(() => {
     const handler = async (e: any) => {
       try {
@@ -315,12 +318,13 @@ export function ComposeDialog({
         await loadDraftIntoComposer(draftId);
       } catch (err: any) {
         console.error(err);
-        toast.error(err?.message || "Failed to open draft");
+        toast.error(err?.message || t("email.compose.toast.openDraftFailed", "Failed to open draft"));
       }
     };
 
     window.addEventListener("open-draft-compose", handler);
     return () => window.removeEventListener("open-draft-compose", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setOpen]);
 
   // Normal open (Compose button / defaultValues)
@@ -330,24 +334,17 @@ export function ComposeDialog({
     const initialToIds =
       defaultValues?.toIds ?? (defaultValues?.toId ? [defaultValues.toId] : []);
 
-    // If opened normally (not via draft event), clear draft edit mode
-    if (!defaultValues && !editingDraftId) {
-      setEditingDraftId(null);
-    }
+    if (!defaultValues && !editingDraftId) setEditingDraftId(null);
 
-    // Only apply defaultValues when provided
     if (defaultValues) {
       setToIds(initialToIds ?? []);
       setCcIds(defaultValues?.ccIds ?? []);
       setBccIds(defaultValues?.bccIds ?? []);
       setSubject(defaultValues?.subject ?? "");
       setBody(defaultValues?.body ?? "");
-      setShowCcBcc(
-        !!(defaultValues?.ccIds?.length || defaultValues?.bccIds?.length)
-      );
+      setShowCcBcc(!!(defaultValues?.ccIds?.length || defaultValues?.bccIds?.length));
       setAttachments(defaultValues?.attachments ?? []);
     } else if (!editingDraftId) {
-      // brand new compose
       setToIds([]);
       setCcIds([]);
       setBccIds([]);
@@ -362,27 +359,26 @@ export function ComposeDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [defaultValues, isOpen]);
 
+  // Global "open-compose" event
   useEffect(() => {
-  const handler = () => {
-    setOpen(true);
-    // brand new message
-    setEditingDraftId(null);
-    setToIds([]);
-    setCcIds([]);
-    setBccIds([]);
-    setSubject("");
-    setBody("");
-    setShowCcBcc(false);
-    setAttachments([]);
-    setIsE2EE(false);
-    setRecipientPublicKeys({});
-  };
+    const handler = () => {
+      setOpen(true);
+      setEditingDraftId(null);
+      setToIds([]);
+      setCcIds([]);
+      setBccIds([]);
+      setSubject("");
+      setBody("");
+      setShowCcBcc(false);
+      setAttachments([]);
+      setIsE2EE(false);
+      setRecipientPublicKeys({});
+    };
 
-  window.addEventListener("open-compose", handler);
-  return () => window.removeEventListener("open-compose", handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, []);
-
+    window.addEventListener("open-compose", handler);
+    return () => window.removeEventListener("open-compose", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const resetForm = () => {
     setEditingDraftId(null);
@@ -399,8 +395,8 @@ export function ComposeDialog({
 
   // --- Handlers ---
   const handleSend = async () => {
-    if (toIds.length === 0) return toast.error("Add at least one recipient");
-    if (!subject.trim()) return toast.error("Subject is required");
+    if (toIds.length === 0) return toast.error(t("email.compose.validation.recipientRequired", "Add at least one recipient"));
+    if (!subject.trim()) return toast.error(t("email.compose.validation.subjectRequired", "Subject is required"));
 
     let finalBody = body;
     let finalSubject = subject;
@@ -416,7 +412,10 @@ export function ComposeDialog({
 
       if (!senderPublicKey) {
         toast.warning(
-          "Sender's key missing. Encryption skipped to prevent lock out of 'Sent' folder."
+          t(
+            "email.compose.encrypt.senderKeyMissing",
+            "Sender's key missing. Encryption skipped to prevent lock out of 'Sent' folder."
+          )
         );
         encryptionStatus = false;
       }
@@ -426,24 +425,21 @@ export function ComposeDialog({
         ...recipientKeys,
       ];
 
-      if (allKeysToEncryptFor.length === 0 || !encryptionStatus) {
-        encryptionStatus = false;
-      }
+      if (allKeysToEncryptFor.length === 0 || !encryptionStatus) encryptionStatus = false;
 
       if (encryptionStatus) {
         try {
           const encryptedBody = await pgpEncrypt(body, allKeysToEncryptFor);
-          const encryptedSubject = await pgpEncrypt(
-            subject,
-            allKeysToEncryptFor
-          );
+          const encryptedSubject = await pgpEncrypt(subject, allKeysToEncryptFor);
 
           finalBody = btoa(encryptedBody);
           finalSubject = btoa(encryptedSubject);
-          toast.success("Message encrypted successfully!");
+          toast.success(t("email.compose.encrypt.success", "Message encrypted successfully!"));
         } catch (error) {
           console.error("Encryption Error:", error);
-          toast.warning("Encryption failed. Sending unencrypted.");
+          toast.warning(
+            t("email.compose.encrypt.failedSendingUnencrypted", "Encryption failed. Sending unencrypted.")
+          );
           finalBody = body;
           finalSubject = subject;
           encryptionStatus = false;
@@ -460,10 +456,10 @@ export function ComposeDialog({
         body: finalBody,
         fileIds: attachments.map((a) => a.id),
         isE2EE: encryptionStatus,
-        draftId: editingDraftId ?? undefined, // ✅ optional cleanup on send
+        draftId: editingDraftId ?? undefined,
       });
 
-      toast.success("Sent!");
+      toast.success(t("email.compose.toast.sent", "Sent!"));
       setOpen(false);
 
       router.refresh();
@@ -476,14 +472,15 @@ export function ComposeDialog({
   };
 
   const handleSaveDraft = async () => {
-    if (
+    const isEmpty =
       !subject.trim() &&
       !body.trim() &&
       toIds.length === 0 &&
       ccIds.length === 0 &&
       bccIds.length === 0 &&
-      attachments.length === 0
-    ) {
+      attachments.length === 0;
+
+    if (isEmpty) {
       setOpen(false);
       return;
     }
@@ -499,9 +496,9 @@ export function ComposeDialog({
           body,
           fileIds: attachments.map((a) => a.id),
         });
-        toast.success("Draft updated");
+        toast.success(t("email.compose.toast.draftUpdated", "Draft updated"));
       } else {
-        const res = await saveDraftAction({
+        await saveDraftAction({
           toIds,
           ccIds,
           bccIds,
@@ -509,11 +506,7 @@ export function ComposeDialog({
           body,
           fileIds: attachments.map((a) => a.id),
         });
-
-        // If you want to keep editing the same newly created draft after Save:
-        // setEditingDraftId(res?.id ?? null);
-
-        toast.success("Draft saved");
+        toast.success(t("email.compose.toast.draftSaved", "Draft saved"));
       }
 
       setOpen(false);
@@ -549,10 +542,7 @@ export function ComposeDialog({
   ) => {
     if (!attrs?.src) return;
     setImageEditorEditor(editorInstance);
-    setImageEditorState({
-      src: attrs.src,
-      alt: attrs.alt ?? "",
-    });
+    setImageEditorState({ src: attrs.src, alt: attrs.alt ?? "" });
     setImageEditorOpen(true);
   };
 
@@ -575,6 +565,15 @@ export function ComposeDialog({
     setImageEditorOpen(false);
   };
 
+  // small helper for English plural handling while keeping your i18n format
+  const attachmentsLabel = useMemo(() => {
+    const count = attachments.length;
+    const plural = count === 1 ? "" : "s";
+    return t("email.compose.attachments.willBeSent", "{count} attachment{plural} will be sent")
+      .replace("{count}", String(count))
+      .replace("{plural}", plural);
+  }, [attachments.length, t]);
+
   return (
     <Dialog
       open={isOpen}
@@ -586,7 +585,7 @@ export function ComposeDialog({
       {trigger === undefined && (
         <DialogTrigger asChild>
           <Button className="w-full justify-center gap-2 h-11 bg-emerald-500 hover:bg-emerald-600 text-white shadow-md font-medium text-base rounded-lg transition-all">
-            <Plus className="h-5 w-5" /> Compose
+            <Plus className="h-5 w-5" /> {t("email.compose.button", "Compose")}
           </Button>
         </DialogTrigger>
       )}
@@ -605,14 +604,16 @@ export function ComposeDialog({
       >
         <DialogHeader className="px-5 pt-4 pb-2 border-b border-slate-100 dark:border-slate-800">
           <DialogTitle className="text-slate-900 dark:text-slate-100 text-sm font-semibold">
-            {editingDraftId ? "Edit Draft" : "New Message"}
+            {editingDraftId
+              ? t("email.compose.editDraft", "Edit Draft")
+              : t("email.compose.newMessage", "New Message")}
           </DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 min-h-0 flex flex-col">
           <div className="flex-none px-5 pt-3 pb-2 space-y-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-900/40">
             <RecipientInput
-              label="To"
+              label={t("email.compose.to", "To")}
               users={users}
               selectedIds={toIds}
               onChange={setToIds}
@@ -625,7 +626,7 @@ export function ComposeDialog({
                   onClick={() => setShowCcBcc(true)}
                   className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
                 >
-                  Show CC/BCC
+                  {t("email.compose.showCcBcc", "Show CC/BCC")}
                 </button>
               )}
             </div>
@@ -633,13 +634,13 @@ export function ComposeDialog({
             {showCcBcc && (
               <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
                 <RecipientInput
-                  label="Cc"
+                  label={t("email.compose.cc", "Cc")}
                   users={users}
                   selectedIds={ccIds}
                   onChange={setCcIds}
                 />
                 <RecipientInput
-                  label="Bcc"
+                  label={t("email.compose.bcc", "Bcc")}
                   users={users}
                   selectedIds={bccIds}
                   onChange={setBccIds}
@@ -648,7 +649,7 @@ export function ComposeDialog({
             )}
 
             <Input
-              placeholder="Subject"
+              placeholder={t("email.compose.subject.placeholder", "Subject")}
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               className="border-0 border-b border-slate-100 dark:border-slate-800 rounded-none px-0 focus-visible:ring-0 text-lg font-medium bg-transparent"
@@ -658,15 +659,20 @@ export function ComposeDialog({
           <div className="flex-1 min-h-0 overflow-y-auto px-5 py-3 bg-slate-50/20 dark:bg-slate-900/20">
             {isE2EE && (
               <div className="text-sm text-yellow-600 dark:text-yellow-400 mb-2 border-y border-yellow-200 dark:border-yellow-800 py-1 px-2 bg-yellow-50 dark:bg-yellow-950/50">
-                E2EE Active: The message content will be encrypted before
-                sending. Attachments are NOT encrypted.
+                {t(
+                  "email.compose.e2ee.activeNotice",
+                  "E2EE Active: The message content will be encrypted before sending. Attachments are NOT encrypted."
+                )}
               </div>
             )}
 
             <RichTextEditor
               value={body}
               onChange={setBody}
-              placeholder="Type your message here... (Try typing '@' to mention someone)"
+              placeholder={t(
+                "email.compose.editor.placeholder",
+                "Type your message here... (Try typing '@' to mention someone)"
+              )}
               mentionUsers={users}
               minHeight="220px"
               onImageButtonClick={handleInsertImage}
@@ -680,22 +686,25 @@ export function ComposeDialog({
               {isE2EE ? (
                 <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
                   <Lock className="w-3 h-3 fill-emerald-600 dark:fill-emerald-400" />
-                  End-to-End Encryption (PGP) is Active
+                  {t(
+                    "email.compose.e2ee.activeLabel",
+                    "End-to-End Encryption (PGP) is Active"
+                  )}
                 </span>
               ) : (
                 <span className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1.5">
                   <Lock className="w-3 h-3 text-red-500 dark:text-red-400" />
-                  Encryption Disabled (Missing keys for one or more recipients)
+                  {t(
+                    "email.compose.e2ee.disabledLabel",
+                    "Encryption Disabled (Missing keys for one or more recipients)"
+                  )}
                 </span>
               )}
             </div>
 
             {attachments.length > 0 && (
               <div className="text-[11px] text-slate-500 flex items-center justify-between">
-                <span>
-                  {attachments.length} attachment
-                  {attachments.length > 1 && "s"} will be sent
-                </span>
+                <span>{attachmentsLabel}</span>
               </div>
             )}
 
@@ -709,19 +718,15 @@ export function ComposeDialog({
               >
                 {isPending
                   ? editingDraftId
-                    ? "Updating..."
-                    : "Saving..."
+                    ? t("email.compose.updating", "Updating...")
+                    : t("email.compose.saving", "Saving...")
                   : editingDraftId
-                    ? "Update draft"
-                    : "Save draft"}
+                  ? t("email.compose.updateDraft", "Update draft")
+                  : t("email.compose.saveDraft", "Save draft")}
               </Button>
 
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setOpen(false)}
-              >
-                Discard
+              <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+                {t("email.compose.discard", "Discard")}
               </Button>
 
               <Button
@@ -730,7 +735,9 @@ export function ComposeDialog({
                 disabled={isPending}
                 className="bg-emerald-600 hover:bg-emerald-700 w-24 text-white"
               >
-                {isPending ? "Sending..." : "Send"}
+                {isPending
+                  ? t("email.compose.sending", "Sending...")
+                  : t("email.compose.send", "Send")}
               </Button>
             </div>
           </div>
@@ -741,15 +748,18 @@ export function ComposeDialog({
           <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-card text-card-foreground rounded-lg shadow-xl p-4 max-w-xl w-full">
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-semibold">Edit image</h2>
+                <h2 className="text-sm font-semibold">
+                  {t("email.compose.imageEditor.title", "Edit image")}
+                </h2>
                 <button
                   type="button"
                   onClick={() => setImageEditorOpen(false)}
                   className="text-xs text-slate-400 hover:text-slate-200"
                 >
-                  Close
+                  {t("email.compose.imageEditor.close", "Close")}
                 </button>
               </div>
+
               <div className="max-h-[320px] overflow-auto border rounded-md mb-4 bg-black/5 dark:bg-white/5 flex items-center justify-center">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -758,9 +768,13 @@ export function ComposeDialog({
                   className="block max-w-full h-auto mx-auto rounded-md"
                 />
               </div>
+
               <div className="space-y-2 mb-4">
                 <label className="text-xs font-medium text-slate-600 dark:text-slate-300">
-                  Alt text (for accessibility)
+                  {t(
+                    "email.compose.imageEditor.altLabel",
+                    "Alt text (for accessibility)"
+                  )}
                 </label>
                 <Input
                   value={imageEditorState.alt}
@@ -769,10 +783,14 @@ export function ComposeDialog({
                       prev ? { ...prev, alt: e.target.value } : prev
                     )
                   }
-                  placeholder="Describe the image"
+                  placeholder={t(
+                    "email.compose.imageEditor.altPlaceholder",
+                    "Describe the image"
+                  )}
                   className="text-sm"
                 />
               </div>
+
               <div className="flex justify-between items-center gap-2">
                 <Button
                   variant="outline"
@@ -780,7 +798,7 @@ export function ComposeDialog({
                   type="button"
                   onClick={removeImage}
                 >
-                  Remove image
+                  {t("email.compose.imageEditor.remove", "Remove image")}
                 </Button>
                 <div className="flex gap-2">
                   <Button
@@ -789,10 +807,10 @@ export function ComposeDialog({
                     type="button"
                     onClick={() => setImageEditorOpen(false)}
                   >
-                    Cancel
+                    {t("email.compose.imageEditor.cancel", "Cancel")}
                   </Button>
                   <Button size="sm" type="button" onClick={applyImageEdits}>
-                    Apply
+                    {t("email.compose.imageEditor.apply", "Apply")}
                   </Button>
                 </div>
               </div>

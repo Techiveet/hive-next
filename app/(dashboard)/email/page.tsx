@@ -1,10 +1,10 @@
 // app/(dashboard)/email/page.tsx
 
 import { EmailList } from "./_components/email-list";
-import { Mail } from "lucide-react";
+import { EmailPagePlaceholder } from "./email-page-placeholder";
 import { Suspense } from "react";
 import { getCurrentSession } from "@/lib/auth-server";
-import { headers } from "next/headers"; // <--- CHANGED: Use headers instead of cookies
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 // ---------------- Skeleton while list loads ----------------
@@ -55,12 +55,9 @@ async function EmailListServer({
   const { user } = await getCurrentSession();
   if (!user) redirect("/sign-in");
 
-  // 1. Get the full cookie string from the request headers
-  // This forwards ALL cookies (session, etc.) regardless of their name
   const headersList = await headers();
   const cookieHeader = headersList.get("cookie") || "";
 
-  // Construct URL parameters
   const params = new URLSearchParams({
     folder,
     pageSize: pageSize.toString(),
@@ -71,18 +68,14 @@ async function EmailListServer({
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
   try {
-    // 2. Pass the cookie header to the API call
     const res = await fetch(`${baseUrl}/api/emails?${params.toString()}`, {
-      headers: {
-        Cookie: cookieHeader, // Forwarding the exact cookies we received
-      },
+      headers: { Cookie: cookieHeader },
       next: { tags: ["emails"] },
       cache: "no-store",
     });
 
     if (!res.ok) {
       console.error("Failed to fetch emails:", res.status, res.statusText);
-      // Return empty list on error instead of crashing
       return (
         <EmailList
           initialEmails={[]}
@@ -111,6 +104,7 @@ async function EmailListServer({
     return (
       <div className="h-full w-full lg:w-[380px] min-w-0 flex items-center justify-center">
         <div className="text-center p-6">
+          {/* keep server-safe fallback (optional to localize later via a client wrapper) */}
           <p className="text-slate-500">Failed to load emails.</p>
         </div>
       </div>
@@ -137,31 +131,15 @@ export default async function EmailPage({
 
   return (
     <>
-      {/* Middle: Email list (sidebar lives in layout.tsx) */}
+      {/* Middle: Email list */}
       <div className="h-full w-full lg:w-[380px] min-w-0">
         <Suspense fallback={<EmailListLoading />}>
-          <EmailListServer
-            folder={folder}
-            cursor={cursor}
-            pageSize={pageSize}
-            searchQuery={q}
-          />
+          <EmailListServer folder={folder} cursor={cursor} pageSize={pageSize} searchQuery={q} />
         </Suspense>
       </div>
 
-      {/* Right placeholder when no email selected (desktop) */}
-      <div className="hidden flex-1 lg:flex h-full flex-col items-center justify-center rounded-xl bg-white shadow-sm border border-slate-200 dark:bg-slate-900 dark:border-slate-800 p-8 text-center">
-        <div className="relative mb-6 rounded-full bg-slate-50 p-6 dark:bg-slate-800">
-          <Mail className="h-12 w-12 text-slate-300" />
-          <div className="absolute right-5 top-5 h-3 w-3 rounded-full bg-emerald-500 ring-4 ring-white dark:ring-slate-900" />
-        </div>
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
-          Select an email to read
-        </h2>
-        <p className="mt-2 text-sm text-slate-500 max-w-xs mx-auto">
-          Choose a message from the list to view its details.
-        </p>
-      </div>
+      {/* Right placeholder (localized) */}
+      <EmailPagePlaceholder />
     </>
   );
 }

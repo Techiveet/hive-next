@@ -3,6 +3,7 @@
 import { AppConfigProvider } from "@/components/providers/app-config-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { FileManagerEventListener } from "@/components/file-manager/file-manager-event-listener";
+import { I18nProvider } from "@/lib/i18n/client";
 import { PermissionsProvider } from "@/components/providers/permissions-provider";
 import type { ReactNode } from "react";
 import { SessionGuard } from "@/components/session-guard";
@@ -14,6 +15,9 @@ import { getCurrentUserPermissions } from "@/lib/permissions";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+
+// ✅ ADD THIS
+
 
 // 1. Define Default Dictionary
 const DEFAULT_DICTIONARY = {
@@ -63,14 +67,13 @@ async function resolveTenantIdFromHost(): Promise<string | null> {
 async function getUnreadEmailData(userId: string) {
   try {
     const [unreadEmails, unreadCount] = await Promise.all([
-      // Fetch only what's needed for menu display
       prisma.emailRecipient.findMany({
-        where: { 
-          userId, 
-          isRead: false, 
-          folder: "inbox" 
+        where: {
+          userId,
+          isRead: false,
+          folder: "inbox",
         },
-        take: 3, // Reduced from 5 to 3 for performance
+        take: 3,
         orderBy: { createdAt: "desc" },
         select: {
           id: true,
@@ -79,22 +82,21 @@ async function getUnreadEmailData(userId: string) {
             select: {
               id: true,
               subject: true,
-              sender: { 
-                select: { 
-                  name: true, 
-                  email: true 
-                } 
+              sender: {
+                select: {
+                  name: true,
+                  email: true,
+                },
               },
             },
           },
         },
       }),
-      // Use count for total
       prisma.emailRecipient.count({
-        where: { 
-          userId, 
-          isRead: false, 
-          folder: "inbox" 
+        where: {
+          userId,
+          isRead: false,
+          folder: "inbox",
         },
       }),
     ]);
@@ -127,36 +129,31 @@ export default async function DashboardLayout({
     redirect("/ip-restricted");
   }
 
-  // ✅ Parallel fetch with optimizations
-  const [
-    permissions,
-    brand,
-    appSettings,
-    languages,
-    emailData,
-  ] = await Promise.all([
-    getCurrentUserPermissions(tenantId),
-    // Use findUnique with proper tenantId check
-    tenantId ? prisma.brandSettings.findFirst({
-      where: { tenantId },
-    }) : Promise.resolve(null),
-    // App settings with tenantId check
-    tenantId ? prisma.appSettings.findUnique({
-      where: { tenantId },
-    }) : Promise.resolve(null),
-    // Languages with tenantId check
-    tenantId ? prisma.language.findMany({
-      where: { tenantId },
-      select: { code: true, name: true, translations: true },
-    }) : Promise.resolve([]),
-    // Email data (parallel but separate from tenant queries)
-    getUnreadEmailData(user.id),
-  ]);
+  const [permissions, brand, appSettings, languages, emailData] =
+    await Promise.all([
+      getCurrentUserPermissions(tenantId),
+      tenantId
+        ? prisma.brandSettings.findFirst({
+            where: { tenantId },
+          })
+        : Promise.resolve(null),
+      tenantId
+        ? prisma.appSettings.findUnique({
+            where: { tenantId },
+          })
+        : Promise.resolve(null),
+      tenantId
+        ? prisma.language.findMany({
+            where: { tenantId },
+            select: { code: true, name: true, translations: true },
+          })
+        : Promise.resolve([]),
+      getUnreadEmailData(user.id),
+    ]);
 
   // Fallback to global/default brand
   let finalBrand = brand;
   if (!finalBrand && tenantId !== null) {
-    // Only try to get global brand if we have a tenant ID
     finalBrand = await prisma.brandSettings.findFirst({
       where: { tenantId: null },
     });
@@ -165,7 +162,6 @@ export default async function DashboardLayout({
   // Fallback to global/default app settings
   let finalAppSettings = appSettings;
   if (!finalAppSettings && tenantId !== null) {
-    // Only try to get global settings if we have a tenant ID
     finalAppSettings = await prisma.appSettings.findFirst({
       where: { tenantId: null },
     });
@@ -182,11 +178,11 @@ export default async function DashboardLayout({
 
   // 2. Determine Active Language
   const activeLocale = finalAppSettings?.locale ?? "en";
-  
-  // Only filter languages if we have tenant-specific languages
-  const activeLanguageRecord = languages.length > 0 
-    ? languages.find((lang) => lang.code === activeLocale)
-    : null;
+
+  const activeLanguageRecord =
+    languages.length > 0
+      ? languages.find((lang) => lang.code === activeLocale)
+      : null;
 
   const finalDictionary = activeLanguageRecord?.translations
     ? {
@@ -212,37 +208,39 @@ export default async function DashboardLayout({
   return (
     <PermissionsProvider permissions={permissions}>
       <AppConfigProvider config={config}>
-        <SessionGuard timeoutMinutes={config.sessionTimeout} />
-        <TwoFactorEnforcer
-          enforced={config.enforceTwoFactor}
-          isEnabled={user.twoFactorEnabled ?? false}
-        />
-        <FileManagerEventListener />
+        {/* ✅ WRAP HERE so ALL client components (RichTextEditor included) see translations */}
+        <I18nProvider locale={activeLocale} messages={finalDictionary as Record<string, string>}>
+          <SessionGuard timeoutMinutes={config.sessionTimeout} />
+          <TwoFactorEnforcer
+            enforced={config.enforceTwoFactor}
+            isEnabled={user.twoFactorEnabled ?? false}
+          />
+          <FileManagerEventListener />
 
-        <DashboardShell
-          user={{
-            id: user.id,
-            name: user.name ?? null,
-            email: user.email,
-            image: user.image ?? null,
-          }}
-          permissions={permissions}
-          currentLocale={activeLocale}
-          languages={languages.map((l) => ({ code: l.code, name: l.name }))}
-          brand={{
-            titleText: finalBrand?.titleText ?? null,
-            logoLightUrl: finalBrand?.logoLightUrl ?? null,
-            logoDarkUrl: finalBrand?.logoDarkUrl ?? null,
-            sidebarIconUrl: finalBrand?.sidebarIconUrl ?? null,
-          }}
-          // ✅ PASS OPTIMIZED EMAIL DATA
-          emailData={{
-            count: emailData.unreadCount,
-            items: emailData.unreadEmails as UnreadEmailData[],
-          }}
-        >
-          {children}
-        </DashboardShell>
+          <DashboardShell
+            user={{
+              id: user.id,
+              name: user.name ?? null,
+              email: user.email,
+              image: user.image ?? null,
+            }}
+            permissions={permissions}
+            currentLocale={activeLocale}
+            languages={languages.map((l) => ({ code: l.code, name: l.name }))}
+            brand={{
+              titleText: finalBrand?.titleText ?? null,
+              logoLightUrl: finalBrand?.logoLightUrl ?? null,
+              logoDarkUrl: finalBrand?.logoDarkUrl ?? null,
+              sidebarIconUrl: finalBrand?.sidebarIconUrl ?? null,
+            }}
+            emailData={{
+              count: emailData.unreadCount,
+              items: emailData.unreadEmails as UnreadEmailData[],
+            }}
+          >
+            {children}
+          </DashboardShell>
+        </I18nProvider>
       </AppConfigProvider>
     </PermissionsProvider>
   );

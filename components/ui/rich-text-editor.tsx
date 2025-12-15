@@ -89,6 +89,8 @@ import html from "highlight.js/lib/languages/xml";
 import js from "highlight.js/lib/languages/javascript";
 import ts from "highlight.js/lib/languages/typescript";
 
+import { useI18n, type TFn } from "@/lib/i18n/client";
+
 // ---------------------- lowlight / syntax highlighting ----------------------
 
 const lowlight = createLowlight(all);
@@ -159,8 +161,8 @@ const VideoBlock = Node.create({
 const FileAttachmentBlock = Node.create({
   name: "fileAttachmentBlock",
   group: "inline", // It lives inside a paragraph
-  inline: true,    // It's an inline element
-  atom: true,      // Treated as a single unit
+  inline: true, // It's an inline element
+  atom: true, // Treated as a single unit
 
   addAttributes() {
     return {
@@ -175,10 +177,10 @@ const FileAttachmentBlock = Node.create({
       {
         tag: 'span[data-attachment="file"] > a',
         getAttrs: (node) => {
-          if (typeof node === 'string') return {};
-          const a = node.querySelector('a');
+          if (typeof node === "string") return {};
+          const a = node.querySelector("a");
           return {
-            href: a?.getAttribute('href'),
+            href: a?.getAttribute("href"),
             name: a?.textContent,
           };
         },
@@ -201,7 +203,7 @@ const FileAttachmentBlock = Node.create({
     return [
       "span",
       wrapperAttrs,
-      ["span", { "aria-hidden": "true" }, "📎"], // <-- FIXED SYNTAX HERE
+      ["span", { "aria-hidden": "true" }, "📎"],
       [
         "a",
         {
@@ -220,13 +222,6 @@ const FileAttachmentBlock = Node.create({
 // CONFIG
 // -----------------------------------------------------
 
-const FONT_OPTIONS = [
-  { label: "Sans-Serif (Default)", family: "system-ui, sans-serif" },
-  { label: "Serif (Georgia)", family: "Georgia, serif" },
-  { label: "Monospace (Code)", family: "monospace" },
-  { label: "Cursive", family: "cursive" },
-];
-
 const HEADING_CLASSES: { [key: number]: string } = {
   1: "text-2xl font-bold",
   2: "text-xl font-bold",
@@ -235,19 +230,6 @@ const HEADING_CLASSES: { [key: number]: string } = {
   5: "text-sm font-semibold",
   6: "text-xs font-semibold",
 };
-
-const SIZE_OPTIONS = [
-  { label: "Small", size: "12px" },
-  { label: "Normal", size: "16px" },
-  { label: "Large", size: "20px" },
-  { label: "Huge", size: "24px" },
-];
-
-const LINE_HEIGHT_OPTIONS = [
-  { label: "Single", height: "1" },
-  { label: "1.5", height: "1.5" },
-  { label: "Double", height: "2" },
-];
 
 const DEFAULT_MAX_CHARS = 10000;
 
@@ -260,6 +242,7 @@ type MentionItem = { id: string; label: string };
 interface MentionListProps {
   items: MentionItem[];
   command: (item: { id: string; label: string }) => void;
+  noResultLabel: string;
 }
 
 const MentionList = forwardRef<any, MentionListProps>((props, ref) => {
@@ -322,7 +305,7 @@ const MentionList = forwardRef<any, MentionListProps>((props, ref) => {
         ))
       ) : (
         <div className="px-2 py-1.5 text-sm text-muted-foreground">
-          No result
+          {props.noResultLabel}
         </div>
       )}
     </div>
@@ -353,7 +336,8 @@ const updateFloatingPosition = (editor: any, element: HTMLElement) => {
 };
 
 const buildMentionSuggestions = (
-  mentionUsers: { id: string; name?: string; email: string }[]
+  mentionUsers: { id: string; name?: string; email: string }[],
+  t: TFn
 ) => {
   const makeItems = ({ query }: { query: string }) => {
     const q = (query || "").toLowerCase();
@@ -375,6 +359,7 @@ const buildMentionSuggestions = (
           props: {
             ...props,
             items: props.items,
+            noResultLabel: t("editor.mention.noResult", undefined, "No result"),
             command: (item: MentionItem) =>
               props.command({
                 id: item.label,
@@ -404,6 +389,7 @@ const buildMentionSuggestions = (
         component.updateProps({
           ...props,
           items: props.items,
+          noResultLabel: t("editor.mention.noResult", undefined, "No result"),
           command: (item: MentionItem) =>
             props.command({
               id: item.label,
@@ -479,6 +465,28 @@ export function RichTextEditor({
   onAttachFile,
   maxCharacters = DEFAULT_MAX_CHARS,
 }: RichEditorProps) {
+  const { t } = useI18n();
+
+  const FONT_OPTIONS = [
+    { labelKey: "editor.options.fonts.sans", label: "Sans-Serif (Default)", family: "system-ui, sans-serif" },
+    { labelKey: "editor.options.fonts.serif", label: "Serif (Georgia)", family: "Georgia, serif" },
+    { labelKey: "editor.options.fonts.mono", label: "Monospace (Code)", family: "monospace" },
+    { labelKey: "editor.options.fonts.cursive", label: "Cursive", family: "cursive" },
+  ] as const;
+
+  const SIZE_OPTIONS = [
+    { labelKey: "editor.options.sizes.small", label: "Small", size: "12px" },
+    { labelKey: "editor.options.sizes.normal", label: "Normal", size: "16px" },
+    { labelKey: "editor.options.sizes.large", label: "Large", size: "20px" },
+    { labelKey: "editor.options.sizes.huge", label: "Huge", size: "24px" },
+  ] as const;
+
+  const LINE_HEIGHT_OPTIONS = [
+    { labelKey: "editor.options.lineHeights.single", label: "Single", height: "1" },
+    { labelKey: "editor.options.lineHeights.oneHalf", label: "1.5", height: "1.5" },
+    { labelKey: "editor.options.lineHeights.double", label: "Double", height: "2" },
+  ] as const;
+
   const [charactersCount, setCharactersCount] = useState(0);
   const [wordsCount, setWordsCount] = useState(0);
 
@@ -497,9 +505,9 @@ export function RichTextEditor({
     LineHeight,
     ImageExtension,
     VideoBlock,
-    FileAttachmentBlock, // <-- ADDED custom FileAttachmentBlock
+    FileAttachmentBlock,
     Placeholder.configure({
-      placeholder: placeholder || "Write something...",
+      placeholder: placeholder || t("editor.placeholder", undefined, "Write something..."),
     }),
     Underline,
     Subscript,
@@ -531,7 +539,7 @@ export function RichTextEditor({
             "mention font-semibold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-300 px-1 rounded mx-0.5 inline-block",
         },
         deleteTriggerWithBackspace: true,
-        suggestions: buildMentionSuggestions(mentionUsers),
+        suggestions: buildMentionSuggestions(mentionUsers, t),
       })
     );
   }
@@ -577,7 +585,7 @@ export function RichTextEditor({
 
   const setLink = () => {
     const previousUrl = editor.getAttributes("link").href;
-    const url = window.prompt("URL", previousUrl);
+    const url = window.prompt(t("editor.prompts.url", undefined, "URL"), previousUrl);
 
     if (url === null) return;
 
@@ -604,26 +612,30 @@ export function RichTextEditor({
 
   const getActiveFontLabel = () => {
     const activeFont = editor.getAttributes("textStyle").fontFamily;
-    if (!activeFont) return FONT_OPTIONS[0].label;
+    if (!activeFont) return t(FONT_OPTIONS[0].labelKey, undefined, FONT_OPTIONS[0].label);
     return (
-      FONT_OPTIONS.find((f) => f.family === activeFont)?.label ||
-      FONT_OPTIONS[0].label
+      FONT_OPTIONS.find((f) => f.family === activeFont)
+        ? t(
+            FONT_OPTIONS.find((f) => f.family === activeFont)!.labelKey,
+            undefined,
+            FONT_OPTIONS.find((f) => f.family === activeFont)!.label
+          )
+        : t(FONT_OPTIONS[0].labelKey, undefined, FONT_OPTIONS[0].label)
     );
   };
 
   const getActiveSizeLabel = () => {
     const activeSize = editor.getAttributes("textStyle").fontSize;
-    if (!activeSize) return "Normal";
-    return SIZE_OPTIONS.find((s) => s.size === activeSize)?.label || activeSize;
+    if (!activeSize) return t("editor.options.sizes.normal", undefined, "Normal");
+    const found = SIZE_OPTIONS.find((s) => s.size === activeSize);
+    return found ? t(found.labelKey, undefined, found.label) : activeSize;
   };
 
   const getActiveLineHeightLabel = () => {
     const activeHeight = editor.getAttributes("textStyle").lineHeight;
-    if (!activeHeight) return "1.5";
-    return (
-      LINE_HEIGHT_OPTIONS.find((h) => h.height === activeHeight)?.label ||
-      activeHeight
-    );
+    if (!activeHeight) return t("editor.options.lineHeights.oneHalf", undefined, "1.5");
+    const found = LINE_HEIGHT_OPTIONS.find((h) => h.height === activeHeight);
+    return found ? t(found.labelKey, undefined, found.label) : activeHeight;
   };
 
   const isImageSelected = editor.isActive("image");
@@ -651,9 +663,8 @@ export function RichTextEditor({
             const label =
               file.name ||
               file.url.split("/").pop() ||
-              "download-attachment";
+              t("editor.fallbacks.downloadAttachment", undefined, "download-attachment");
 
-            // --- NEW TIPTAP NODE INSERTION ---
             editor
               .chain()
               .focus()
@@ -666,9 +677,9 @@ export function RichTextEditor({
                   },
                 },
                 {
-                  type: 'text',
-                  text: ' ' // Insert a space after the block for easy separation
-                }
+                  type: "text",
+                  text: " ",
+                },
               ])
               .run();
 
@@ -683,11 +694,14 @@ export function RichTextEditor({
     if (typeof window === "undefined") return;
 
     const urlInput = window.prompt(
-      "Paste video URL (YouTube/Vimeo/direct .mp4).\nLeave empty to pick a video from File Manager."
+      t(
+        "editor.prompts.video",
+        undefined,
+        "Paste video URL (YouTube/Vimeo/direct .mp4).\nLeave empty to pick a video from File Manager."
+      )
     );
 
     if (!urlInput) {
-      // pick from File Manager
       window.dispatchEvent(
         new CustomEvent("open-file-manager", {
           detail: {
@@ -720,9 +734,7 @@ export function RichTextEditor({
     let provider: string | null = null;
 
     if (/youtu\.be|youtube\.com/.test(raw)) {
-      const match = raw.match(
-        /(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{6,})/
-      );
+      const match = raw.match(/(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{6,})/);
       const id = match?.[1];
       if (id) {
         src = `https://www.youtube.com/embed/${id}`;
@@ -774,7 +786,7 @@ export function RichTextEditor({
               variant="ghost"
               size="sm"
               className="h-8 gap-1 min-w-[50px] justify-start"
-              title="Font Size"
+              title={t("editor.toolbar.fontSize", undefined, "Font Size")}
             >
               <TextIcon className="h-4 w-4 mr-1" />
               {getActiveSizeLabel()}
@@ -785,23 +797,21 @@ export function RichTextEditor({
             {SIZE_OPTIONS.map((size, index) => (
               <DropdownMenuItem
                 key={index}
-                onClick={() =>
-                  editor.chain().focus().setFontSize(size.size).run()
-                }
+                onClick={() => editor.chain().focus().setFontSize(size.size).run()}
                 className={cn(
                   "cursor-pointer",
                   editor.isActive("textStyle", { fontSize: size.size }) &&
                     "bg-accent font-semibold"
                 )}
               >
-                {size.label}
+                {t(size.labelKey, undefined, size.label)}
               </DropdownMenuItem>
             ))}
             <DropdownMenuItem
               onClick={() => editor.chain().focus().unsetFontSize().run()}
               className="cursor-pointer"
             >
-              [Reset Size]
+              {t("editor.options.sizes.reset", undefined, "[Reset Size]")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -813,7 +823,7 @@ export function RichTextEditor({
               variant="ghost"
               size="sm"
               className="h-8 gap-1 font-semibold min-w-[140px] justify-start"
-              title="Font Family"
+              title={t("editor.toolbar.fontFamily", undefined, "Font Family")}
             >
               {getActiveFontLabel()}
               <ChevronDown className="h-4 w-4 ml-auto" />
@@ -823,9 +833,7 @@ export function RichTextEditor({
             {FONT_OPTIONS.map((font, index) => (
               <DropdownMenuItem
                 key={index}
-                onClick={() =>
-                  editor.chain().focus().setFontFamily(font.family).run()
-                }
+                onClick={() => editor.chain().focus().setFontFamily(font.family).run()}
                 className={cn(
                   "cursor-pointer",
                   editor.isActive("textStyle", { fontFamily: font.family }) &&
@@ -833,14 +841,14 @@ export function RichTextEditor({
                 )}
                 style={{ fontFamily: font.family }}
               >
-                {font.label}
+                {t(font.labelKey, undefined, font.label)}
               </DropdownMenuItem>
             ))}
             <DropdownMenuItem
               onClick={() => editor.chain().focus().unsetFontFamily().run()}
               className="cursor-pointer"
             >
-              [Reset Font]
+              {t("editor.options.fonts.reset", undefined, "[Reset Font]")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -858,7 +866,7 @@ export function RichTextEditor({
                 (editor.isActive("heading") || editor.isActive("paragraph")) &&
                   "bg-muted hover:bg-muted"
               )}
-              title="Heading Style"
+              title={t("editor.toolbar.headingStyle", undefined, "Heading Style")}
             >
               {getActiveHeadingLevel()}
               <ChevronDown className="h-4 w-4" />
@@ -873,15 +881,13 @@ export function RichTextEditor({
                 editor.isActive("paragraph") && "bg-accent font-semibold"
               )}
             >
-              P Paragraph
+              {t("editor.options.heading.paragraph", undefined, "P Paragraph")}
             </DropdownMenuItem>
 
             {([1, 2, 3, 4] as const).map((level) => (
               <DropdownMenuItem
                 key={level}
-                onClick={() =>
-                  editor.chain().focus().toggleHeading({ level }).run()
-                }
+                onClick={() => editor.chain().focus().toggleHeading({ level }).run()}
                 className={cn(
                   "cursor-pointer",
                   HEADING_CLASSES[level],
@@ -889,7 +895,7 @@ export function RichTextEditor({
                     "bg-accent font-semibold"
                 )}
               >
-                {`H${level} Heading ${level}`}
+                {t("editor.options.heading.h", { level }, `H${level} Heading ${level}`)}
               </DropdownMenuItem>
             ))}
           </DropdownMenuContent>
@@ -904,7 +910,7 @@ export function RichTextEditor({
               variant="ghost"
               size="sm"
               className="h-8 gap-1 min-w-[50px] justify-start"
-              title="Line Height"
+              title={t("editor.toolbar.lineHeight", undefined, "Line Height")}
             >
               <ListOrdered className="h-4 w-4 mr-1 rotate-90" />
               {getActiveLineHeightLabel()}
@@ -915,23 +921,21 @@ export function RichTextEditor({
             {LINE_HEIGHT_OPTIONS.map((lh, index) => (
               <DropdownMenuItem
                 key={index}
-                onClick={() =>
-                  editor.chain().focus().setLineHeight(lh.height).run()
-                }
+                onClick={() => editor.chain().focus().setLineHeight(lh.height).run()}
                 className={cn(
                   "cursor-pointer",
                   editor.isActive("textStyle", { lineHeight: lh.height }) &&
                     "bg-accent font-semibold"
                 )}
               >
-                {lh.label} ({lh.height})
+                {t(lh.labelKey, undefined, lh.label)} ({lh.height})
               </DropdownMenuItem>
             ))}
             <DropdownMenuItem
               onClick={() => editor.chain().focus().unsetLineHeight().run()}
               className="cursor-pointer"
             >
-              [Reset Height]
+              {t("editor.options.lineHeights.reset", undefined, "[Reset Height]")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -943,7 +947,7 @@ export function RichTextEditor({
           size="sm"
           pressed={editor.isActive("bold")}
           onPressedChange={() => editor.chain().focus().toggleBold().run()}
-          title="Bold"
+          title={t("editor.toolbar.bold", undefined, "Bold")}
         >
           <Bold className="h-4 w-4" />
         </Toggle>
@@ -952,7 +956,7 @@ export function RichTextEditor({
           size="sm"
           pressed={editor.isActive("italic")}
           onPressedChange={() => editor.chain().focus().toggleItalic().run()}
-          title="Italic"
+          title={t("editor.toolbar.italic", undefined, "Italic")}
         >
           <Italic className="h-4 w-4" />
         </Toggle>
@@ -960,10 +964,8 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive("underline")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleUnderline().run()
-          }
-          title="Underline"
+          onPressedChange={() => editor.chain().focus().toggleUnderline().run()}
+          title={t("editor.toolbar.underline", undefined, "Underline")}
         >
           <UnderlineIcon className="h-4 w-4" />
         </Toggle>
@@ -972,7 +974,7 @@ export function RichTextEditor({
           size="sm"
           pressed={editor.isActive("strike")}
           onPressedChange={() => editor.chain().focus().toggleStrike().run()}
-          title="Strikethrough"
+          title={t("editor.toolbar.strikethrough", undefined, "Strikethrough")}
         >
           <Strikethrough className="h-4 w-4" />
         </Toggle>
@@ -980,10 +982,8 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive("highlight")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleHighlight().run()
-          }
-          title="Highlight"
+          onPressedChange={() => editor.chain().focus().toggleHighlight().run()}
+          title={t("editor.toolbar.highlight", undefined, "Highlight")}
         >
           <Highlighter className="h-4 w-4" />
         </Toggle>
@@ -994,7 +994,7 @@ export function RichTextEditor({
         <div className="flex items-center gap-1 mr-1">
           <ColorHighlightButton
             editor={editor}
-            tooltip="Yellow Highlight"
+            tooltip={t("editor.toolbar.yellowHighlight", undefined, "Yellow Highlight")}
             highlightColor="var(--tt-color-highlight-yellow)"
             hideWhenUnavailable={true}
             showShortcut={false}
@@ -1017,10 +1017,8 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive("subscript")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleSubscript().run()
-          }
-          title="Subscript (x₂)"
+          onPressedChange={() => editor.chain().focus().toggleSubscript().run()}
+          title={t("editor.toolbar.subscript", undefined, "Subscript (x₂)")}
         >
           <SubscriptIcon className="h-4 w-4" />
         </Toggle>
@@ -1028,10 +1026,8 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive("superscript")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleSuperscript().run()
-          }
-          title="Superscript (x²)"
+          onPressedChange={() => editor.chain().focus().toggleSuperscript().run()}
+          title={t("editor.toolbar.superscript", undefined, "Superscript (x²)")}
         >
           <SuperscriptIcon className="h-4 w-4" />
         </Toggle>
@@ -1041,7 +1037,11 @@ export function RichTextEditor({
           size="icon"
           className="h-8 w-8"
           onClick={setLink}
-          title={editor.isActive("link") ? "Unlink" : "Set Link"}
+          title={
+            editor.isActive("link")
+              ? t("editor.toolbar.unlink", undefined, "Unlink")
+              : t("editor.toolbar.setLink", undefined, "Set Link")
+          }
         >
           <LinkIcon
             className={cn(
@@ -1057,10 +1057,8 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive("bulletList")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleBulletList().run()
-          }
-          title="Bulleted List"
+          onPressedChange={() => editor.chain().focus().toggleBulletList().run()}
+          title={t("editor.toolbar.bulletedList", undefined, "Bulleted List")}
         >
           <List className="h-4 w-4" />
         </Toggle>
@@ -1068,10 +1066,8 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive("orderedList")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleOrderedList().run()
-          }
-          title="Numbered List"
+          onPressedChange={() => editor.chain().focus().toggleOrderedList().run()}
+          title={t("editor.toolbar.numberedList", undefined, "Numbered List")}
         >
           <ListOrdered className="h-4 w-4" />
         </Toggle>
@@ -1079,10 +1075,8 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive("blockquote")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleBlockquote().run()
-          }
-          title="Blockquote"
+          onPressedChange={() => editor.chain().focus().toggleBlockquote().run()}
+          title={t("editor.toolbar.blockquote", undefined, "Blockquote")}
         >
           <Quote className="h-4 w-4" />
         </Toggle>
@@ -1090,10 +1084,8 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive("codeBlock")}
-          onPressedChange={() =>
-            editor.chain().focus().toggleCodeBlock().run()
-          }
-          title="Code Block"
+          onPressedChange={() => editor.chain().focus().toggleCodeBlock().run()}
+          title={t("editor.toolbar.codeBlock", undefined, "Code Block")}
         >
           <CodeIcon className="h-4 w-4" />
         </Toggle>
@@ -1104,40 +1096,32 @@ export function RichTextEditor({
         <Toggle
           size="sm"
           pressed={editor.isActive({ textAlign: "left" })}
-          onPressedChange={() =>
-            editor.chain().focus().setTextAlign("left").run()
-          }
-          title="Align Left"
+          onPressedChange={() => editor.chain().focus().setTextAlign("left").run()}
+          title={t("editor.toolbar.alignLeft", undefined, "Align Left")}
         >
           <AlignLeft className="h-4 w-4" />
         </Toggle>
         <Toggle
           size="sm"
           pressed={editor.isActive({ textAlign: "center" })}
-          onPressedChange={() =>
-            editor.chain().focus().setTextAlign("center").run()
-          }
-          title="Align Center"
+          onPressedChange={() => editor.chain().focus().setTextAlign("center").run()}
+          title={t("editor.toolbar.alignCenter", undefined, "Align Center")}
         >
           <AlignCenter className="h-4 w-4" />
         </Toggle>
         <Toggle
           size="sm"
           pressed={editor.isActive({ textAlign: "right" })}
-          onPressedChange={() =>
-            editor.chain().focus().setTextAlign("right").run()
-          }
-          title="Align Right"
+          onPressedChange={() => editor.chain().focus().setTextAlign("right").run()}
+          title={t("editor.toolbar.alignRight", undefined, "Align Right")}
         >
           <AlignRight className="h-4 w-4" />
         </Toggle>
         <Toggle
           size="sm"
           pressed={editor.isActive({ textAlign: "justify" })}
-          onPressedChange={() =>
-            editor.chain().focus().setTextAlign("justify").run()
-          }
-          title="Justify"
+          onPressedChange={() => editor.chain().focus().setTextAlign("justify").run()}
+          title={t("editor.toolbar.justify", undefined, "Justify")}
         >
           <AlignJustify className="h-4 w-4" />
         </Toggle>
@@ -1151,7 +1135,7 @@ export function RichTextEditor({
             size="icon"
             className="h-8 w-8"
             onClick={() => onImageButtonClick(editor)}
-            title="Insert Image from File Manager"
+            title={t("editor.toolbar.insertImage", undefined, "Insert Image from File Manager")}
           >
             <ImageIcon className="h-4 w-4" />
           </Button>
@@ -1165,7 +1149,9 @@ export function RichTextEditor({
             onClick={() => onEditImageClick(editor, selectedImageAttrs)}
             disabled={!isImageSelected}
             title={
-              isImageSelected ? "Edit Selected Image" : "Select an image to edit"
+              isImageSelected
+                ? t("editor.toolbar.editSelectedImage", undefined, "Edit Selected Image")
+                : t("editor.toolbar.selectImageToEdit", undefined, "Select an image to edit")
             }
           >
             <Pencil className="h-4 w-4" />
@@ -1177,7 +1163,7 @@ export function RichTextEditor({
           size="icon"
           className="h-8 w-8"
           onClick={handleFileClick}
-          title="Insert File from File Manager"
+          title={t("editor.toolbar.insertFile", undefined, "Insert File from File Manager")}
         >
           <Paperclip className="h-4 w-4" />
         </Button>
@@ -1187,7 +1173,7 @@ export function RichTextEditor({
           size="icon"
           className="h-8 w-8"
           onClick={handleVideoClick}
-          title="Insert Video (URL or File Manager)"
+          title={t("editor.toolbar.insertVideo", undefined, "Insert Video (URL or File Manager)")}
         >
           <VideoIcon className="h-4 w-4" />
         </Button>
@@ -1200,7 +1186,7 @@ export function RichTextEditor({
           size="icon"
           className="h-8 w-8"
           onClick={() => editor.chain().focus().setHorizontalRule().run()}
-          title="Horizontal Rule"
+          title={t("editor.toolbar.horizontalRule", undefined, "Horizontal Rule")}
         >
           <Minus className="h-4 w-4" />
         </Button>
@@ -1209,10 +1195,8 @@ export function RichTextEditor({
           variant="ghost"
           size="icon"
           className="h-8 w-8"
-          onClick={() =>
-            editor.chain().focus().clearNodes().unsetAllMarks().run()
-          }
-          title="Clear Formatting"
+          onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()}
+          title={t("editor.toolbar.clearFormatting", undefined, "Clear Formatting")}
         >
           <Eraser className="h-4 w-4" />
         </Button>
@@ -1272,10 +1256,10 @@ export function RichTextEditor({
           </svg>
         )}
         <span>
-          {charactersCount} / {maxCharacters} characters
+          {t("editor.counter.characters", { count: charactersCount, max: maxCharacters }, `${charactersCount} / ${maxCharacters} characters`)}
         </span>
         <span className="h-3 w-px bg-slate-300/60" />
-        <span>{wordsCount} words</span>
+        <span>{t("editor.counter.words", { count: wordsCount }, `${wordsCount} words`)}</span>
       </div>
     </div>
   );
