@@ -1,4 +1,4 @@
-//app/(dashboard)/layout.tsx
+// app/(dashboard)/layout.tsx
 
 import { AppConfigProvider } from "@/components/providers/app-config-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
@@ -16,8 +16,7 @@ import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 
-// 1. Define Default Dictionary
-const DEFAULT_DICTIONARY = {
+const DEFAULT_DICTIONARY: Record<string, string> = {
   "dashboard.title": "Dashboard",
   "sidebar.home": "Home",
   "sidebar.settings": "Settings",
@@ -36,40 +35,36 @@ const DEFAULT_DICTIONARY = {
   "validation.required": "This field is required",
 };
 
-async function resolveTenantIdFromHost(): Promise<string | null> {
-  const h = await headers();
-  const host = (h.get("host") || "").toLowerCase();
-  const bareHost = host.split(":")[0];
-
-  let tenantId: string | null = null;
-
-  if (bareHost === "localhost") {
-    const centralTenant = await prisma.tenant.findUnique({
-      where: { slug: "central-hive" },
-      select: { id: true },
-    });
-    tenantId = centralTenant?.id ?? null;
-  } else {
-    const domain = await prisma.tenantDomain.findFirst({
-      where: { domain: bareHost },
-      select: { tenantId: true },
-    });
-    tenantId = domain?.tenantId ?? null;
-  }
-
-  return tenantId;
+function getBareHost(h: Headers) {
+  return (h.get("host") || "").toLowerCase().split(":")[0];
 }
 
-// Optimized function to fetch minimal email data for menu
+async function resolveTenantFromHost(): Promise<{ id: string; slug: string } | null> {
+  const h = await headers();
+  const bareHost = getBareHost(h);
+
+  if (bareHost === "localhost") {
+    const central = await prisma.tenant.findUnique({
+      where: { slug: "central-hive" },
+      select: { id: true, slug: true },
+    });
+    return central ?? null;
+  }
+
+  const domain = await prisma.tenantDomain.findFirst({
+    where: { domain: bareHost },
+    select: { tenant: { select: { id: true, slug: true } } },
+  });
+
+  return domain?.tenant ?? null;
+}
+
+
 async function getUnreadEmailData(userId: string) {
   try {
     const [unreadEmails, unreadCount] = await Promise.all([
       prisma.emailRecipient.findMany({
-        where: {
-          userId,
-          isRead: false,
-          folder: "inbox",
-        },
+        where: { userId, isRead: false, folder: "inbox" },
         take: 3,
         orderBy: { createdAt: "desc" },
         select: {
@@ -79,111 +74,70 @@ async function getUnreadEmailData(userId: string) {
             select: {
               id: true,
               subject: true,
-              sender: {
-                select: {
-                  name: true,
-                  email: true,
-                },
-              },
+              sender: { select: { name: true, email: true } },
             },
           },
         },
       }),
       prisma.emailRecipient.count({
-        where: {
-          userId,
-          isRead: false,
-          folder: "inbox",
-        },
+        where: { userId, isRead: false, folder: "inbox" },
       }),
     ]);
 
     return { unreadEmails, unreadCount };
-  } catch (error) {
-    console.error("Error fetching unread emails:", error);
+  } catch (err) {
+    console.error("[DashboardLayout] unread emails fetch failed:", err);
     return { unreadEmails: [], unreadCount: 0 };
   }
 }
 
-export default async function DashboardLayout({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
   const { user } = await getCurrentSession();
+  if (!user) redirect("/sign-in?callbackURL=/dashboard");
 
-  if (!user) {
-    redirect("/sign-in?callbackURL=/dashboard");
-  }
+  const tenant = await resolveTenantFromHost();
+const tenantId = tenant?.id ?? null;
+const tenantKey = tenant?.slug ?? "GLOBAL"; // ✅ CORRECT
 
-  const tenantId = await resolveTenantIdFromHost();
 
-  // ✅ tenant-aware key (works across ALL tenants)
-  const tenantKey = tenantId ?? "central";
-
-  // ✅ SECURITY CHECK: IP RESTRICTION
   const ipCheck = await checkIpRestriction(tenantId);
+  if (!ipCheck.allowed) redirect("/ip-restricted");
 
-  if (!ipCheck.allowed) {
-    console.warn(`[IP Guard] Blocked ${user.email} from ${ipCheck.ip}`);
-    redirect("/ip-restricted");
-  }
+  const [
+    permissions,
+    tenantBrand,
+    tenantAppSettings,
+    tenantLanguages,
+    globalBrand,
+    globalAppSettings,
+    emailData,
+  ] = await Promise.all([
+    getCurrentUserPermissions(tenantId),
 
-  const [permissions, brand, appSettings, languages, emailData] =
-    await Promise.all([
-      getCurrentUserPermissions(tenantId),
-      tenantId
-        ? prisma.brandSettings.findFirst({
-            where: { tenantId },
-          })
-        : Promise.resolve(null),
-      tenantId
-        ? prisma.appSettings.findUnique({
-            where: { tenantId },
-          })
-        : Promise.resolve(null),
-      tenantId
-        ? prisma.language.findMany({
-            where: { tenantId },
-            select: { code: true, name: true, translations: true },
-          })
-        : Promise.resolve([]),
-      getUnreadEmailData(user.id),
-    ]);
+    prisma.brandSettings.findFirst({ where: { tenantId } }),
+    prisma.appSettings.findFirst({ where: { tenantId } }),
+    prisma.language.findMany({
+      where: { tenantId },
+      select: { code: true, name: true, translations: true },
+    }),
 
-  // Fallback to global/default brand
-  let finalBrand = brand;
-  if (!finalBrand && tenantId !== null) {
-    finalBrand = await prisma.brandSettings.findFirst({
-      where: { tenantId: null },
-    });
-  }
+    prisma.brandSettings.findFirst({ where: { tenantId: null } }),
+    prisma.appSettings.findFirst({ where: { tenantId: null } }),
 
-  // Fallback to global/default app settings
-  let finalAppSettings = appSettings;
-  if (!finalAppSettings && tenantId !== null) {
-    finalAppSettings = await prisma.appSettings.findFirst({
-      where: { tenantId: null },
-    });
-  }
+    getUnreadEmailData(user.id),
+  ]);
 
-  if (!permissions || permissions.length === 0) {
-    redirect("/access-denied");
-  }
+  if (!permissions || permissions.length === 0) redirect("/access-denied");
 
-  // Determine Active Language
+  const finalBrand = tenantBrand ?? globalBrand ?? null;
+  const finalAppSettings = tenantAppSettings ?? globalAppSettings ?? null;
+
   const activeLocale = finalAppSettings?.locale ?? "en";
-
   const activeLanguageRecord =
-    languages.length > 0
-      ? languages.find((lang) => lang.code === activeLocale)
-      : null;
+    tenantLanguages.length > 0 ? tenantLanguages.find((l) => l.code === activeLocale) : null;
 
-  const finalDictionary = activeLanguageRecord?.translations
-    ? {
-        ...DEFAULT_DICTIONARY,
-        ...(activeLanguageRecord.translations as object),
-      }
+  const dictionary: Record<string, string> = activeLanguageRecord?.translations
+    ? { ...DEFAULT_DICTIONARY, ...(activeLanguageRecord.translations as Record<string, string>) }
     : DEFAULT_DICTIONARY;
 
   const config = {
@@ -191,40 +145,29 @@ export default async function DashboardLayout({
     locale: activeLocale,
     dateFormat: finalAppSettings?.dateFormat ?? "yyyy-MM-dd",
     timeFormat: finalAppSettings?.timeFormat ?? "HH:mm",
-    weekStartsOn: finalAppSettings?.weekStartsOn ?? 1,
+    weekStartsOn: typeof finalAppSettings?.weekStartsOn === "number" ? finalAppSettings.weekStartsOn : 1,
     sessionTimeout:
-      finalAppSettings?.sessionTimeout && finalAppSettings.sessionTimeout > 0
+      typeof finalAppSettings?.sessionTimeout === "number" && finalAppSettings.sessionTimeout > 0
         ? finalAppSettings.sessionTimeout
         : 30,
     enforceTwoFactor: finalAppSettings?.enforceTwoFactor ?? false,
-    dictionary: finalDictionary as Record<string, string>,
+    dictionary,
   };
 
   return (
     <PermissionsProvider permissions={permissions}>
       <AppConfigProvider config={config}>
-        <I18nProvider
-          locale={activeLocale}
-          messages={finalDictionary as Record<string, string>}
-        >
+        <I18nProvider locale={activeLocale} messages={dictionary}>
           <SessionGuard timeoutMinutes={config.sessionTimeout} />
-          <TwoFactorEnforcer
-            enforced={config.enforceTwoFactor}
-            isEnabled={user.twoFactorEnabled ?? false}
-          />
+          <TwoFactorEnforcer enforced={config.enforceTwoFactor} isEnabled={user.twoFactorEnabled ?? false} />
           <FileManagerEventListener />
 
           <DashboardShell
-            tenantKey={tenantKey} // ✅ PASS DOWN
-            user={{
-              id: user.id,
-              name: user.name ?? null,
-              email: user.email,
-              image: user.image ?? null,
-            }}
+            tenantKey={tenantKey}
+            user={{ id: user.id, name: user.name ?? null, email: user.email, image: user.image ?? null }}
             permissions={permissions}
             currentLocale={activeLocale}
-            languages={languages.map((l) => ({ code: l.code, name: l.name }))}
+            languages={tenantLanguages.map((l) => ({ code: l.code, name: l.name }))}
             brand={{
               titleText: finalBrand?.titleText ?? null,
               logoLightUrl: finalBrand?.logoLightUrl ?? null,

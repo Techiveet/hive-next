@@ -40,20 +40,14 @@ import {
 import { useRouter, useSearchParams } from "next/navigation"; // Added useSearchParams for tab persistence
 import { useState, useTransition } from "react";
 
-import { Breadcrumb } from "@/components/breadcrumb";
+import { Breadcrumb } from "@/components/breadcrumb"; // Import Breadcrumb
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TourControls } from "@/components/tour/tour-controls"; // Import TourControls
 import { toast } from "sonner";
 
 // 1. ADD IMPORT HERE
-
-
-
-
-
-
-
 type UserProfile = {
   id: string;
   name: string | null;
@@ -235,7 +229,10 @@ export default function ProfileClient({ user }: { user: UserProfile }) {
       
       {/* 2. ADD BREADCRUMB HERE */}
       <div className="space-y-2">
-         <Breadcrumb />
+        <div className="flex items-center justify-between">
+          <Breadcrumb /> {/* Add breadcrumb component here */}
+          <TourControls steps={[{ id: "step1", title: "Step 1" }, { id: "step2", title: "Step 2" }]} /> {/* Pass your steps */}
+        </div>
       </div>
 
       {/* HEADER */}

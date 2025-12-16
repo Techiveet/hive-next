@@ -10,36 +10,20 @@ import { Sidebar } from "@/components/sidebar";
 import type { UnreadEmailData } from "@/components/email-menu";
 
 type DashboardShellProps = {
-  user: {
-    id: string;
-    name: string | null;
-    email: string;
-    image?: string | null;
-  };
+  user: { id: string; name: string | null; email: string; image?: string | null };
   permissions: string[];
-  brand?: {
-    titleText?: string | null;
-    logoLightUrl?: string | null;
-    logoDarkUrl?: string | null;
-    sidebarIconUrl?: string | null;
-  };
+  brand?: { titleText?: string | null; logoLightUrl?: string | null; logoDarkUrl?: string | null; sidebarIconUrl?: string | null };
   currentLocale?: string;
   languages?: { code: string; name: string }[];
-  emailData?: {
-    count: number;
-    items: UnreadEmailData[];
-  };
-
-  // ✅ ADD: tenant key (tenant-aware tour)
+  emailData?: { count: number; items: UnreadEmailData[] };
   tenantKey: string;
-
   children: ReactNode;
 };
 
 export function DashboardShell({
   children,
   user,
-  permissions = [],
+  permissions,
   brand,
   currentLocale,
   languages,
@@ -48,16 +32,14 @@ export function DashboardShell({
 }: DashboardShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
-  // ✅ When tour starts, ensure sidebar is open (important for mobile + selector existence)
   useEffect(() => {
-    const handler = () => setIsSidebarOpen(true);
-    window.addEventListener("start-app-tour", handler);
-    return () => window.removeEventListener("start-app-tour", handler);
+    const openSidebar = () => setIsSidebarOpen(true);
+    window.addEventListener("start-app-tour", openSidebar);
+    return () => window.removeEventListener("start-app-tour", openSidebar);
   }, []);
 
   return (
     <RbacProvider permissions={permissions}>
-      {/* ✅ Mount tour ONLY HERE (client). Tenant-aware. */}
       <DashboardTourMount userId={user.id} tenantKey={tenantKey} />
 
       <div className="flex min-h-screen bg-background text-foreground dark:bg-slate-950 dark:text-slate-50">
@@ -70,16 +52,12 @@ export function DashboardShell({
         />
 
         <div className="flex min-h-screen flex-1 flex-col overflow-hidden">
-          <Navbar
-            user={user}
-            currentLocale={currentLocale}
-            languages={languages}
-            emailData={emailData}
-          />
+          <Navbar user={user} currentLocale={currentLocale} languages={languages} emailData={emailData} />
 
+          {/* ✅ content selector lives here always */}
           <main
             data-tour="content"
-            className="flex-1 bg-background px-4 py-6 lg:px-6 xl:px-8 dark:bg-slate-950 overflow-y-auto"
+            className="flex-1 overflow-y-auto bg-background px-4 py-6 lg:px-6 xl:px-8 dark:bg-slate-950"
           >
             <div className="w-full">{children}</div>
           </main>

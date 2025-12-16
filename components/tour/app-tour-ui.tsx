@@ -1,6 +1,13 @@
+// app/components/tour/app-tour-ui.tsx
 "use client";
 
-import { ChevronLeft, ChevronRight, Sparkles, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { computePosition, flip, offset, shift } from "@floating-ui/dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -41,7 +48,7 @@ function getViewport() {
 }
 
 /**
- * ✅ FIX: clamp highlight so it never overflows viewport
+ * ✅ clamp highlight so it never overflows viewport
  */
 function getRect(selector: string, pad = 10, margin = 18): Rect | null {
   const el = document.querySelector(selector) as HTMLElement | null;
@@ -69,11 +76,15 @@ function getRect(selector: string, pad = 10, margin = 18): Rect | null {
 }
 
 export function AppTourUI() {
-  const { isOpen, steps, index, stop, next, back } = useAppTour();
+  const { isOpen, steps, index, stop, next, back, goTo } = useAppTour();
   const step = steps[index];
 
   const [mounted, setMounted] = useState(false);
   const [rect, setRect] = useState<Rect | null>(null);
+
+  // ✅ Jump UI
+  const [jumpOpen, setJumpOpen] = useState(false);
+  const jumpWrapRef = useRef<HTMLDivElement | null>(null);
 
   const tipRef = useRef<HTMLDivElement | null>(null);
   const targetRef = useRef<HTMLElement | null>(null);
@@ -81,7 +92,31 @@ export function AppTourUI() {
 
   const highlight = useMemo(() => rect, [rect]);
 
+  const jumpItems = useMemo(
+    () => steps.map((s, i) => ({ i, id: s.id, title: s.title })),
+    [steps]
+  );
+
   useEffect(() => setMounted(true), []);
+
+  // close jump on outside click
+  useEffect(() => {
+    if (!jumpOpen) return;
+
+    const onDown = (e: MouseEvent) => {
+      const wrap = jumpWrapRef.current;
+      if (!wrap) return;
+      if (!wrap.contains(e.target as Node)) setJumpOpen(false);
+    };
+
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [jumpOpen]);
+
+  // close jump when step changes / tour closes
+  useEffect(() => {
+    setJumpOpen(false);
+  }, [index, isOpen]);
 
   const measure = () => {
     if (!isOpen || !step) return;
@@ -91,19 +126,15 @@ export function AppTourUI() {
 
     const auto = getRect(step.selector, step.padding ?? 12);
 
-    // merge fixed rect with auto (so top/y stays correct if you want auto y)
-    // @ts-ignore
-    if (step.rect && auto) {
-      // @ts-ignore
+    // ✅ merge fixed rect with auto
+    const anyStep: any = step as any;
+
+    if (anyStep?.rect && auto) {
       setRect({
-        // @ts-ignore
-        x: step.rect.x ?? auto.x,
-        // @ts-ignore
-        y: step.rect.y ?? auto.y,
-        // @ts-ignore
-        width: step.rect.width ?? auto.width,
-        // @ts-ignore
-        height: step.rect.height ?? auto.height,
+        x: anyStep.rect.x ?? auto.x,
+        y: anyStep.rect.y ?? auto.y,
+        width: anyStep.rect.width ?? auto.width,
+        height: anyStep.rect.height ?? auto.height,
       });
       return;
     }
@@ -113,9 +144,7 @@ export function AppTourUI() {
 
   const scheduleMeasure = () => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      measure();
-    });
+    rafRef.current = requestAnimationFrame(() => measure());
   };
 
   useEffect(() => {
@@ -216,10 +245,10 @@ export function AppTourUI() {
 
   return createPortal(
     <div className="fixed inset-0 z-[9999]">
-      {/* ✅ ONE overlay only */}
+      {/* overlay */}
       <div className="absolute inset-0 bg-slate-950/35" />
 
-      {/* ✅ Spotlight / highlight */}
+      {/* highlight */}
       <div
         className="absolute pointer-events-none"
         style={{
@@ -244,11 +273,11 @@ export function AppTourUI() {
         <div className="absolute inset-[2px] rounded-[26px] ring-1 ring-white/10" />
       </div>
 
-      {/* Tooltip */}
+      {/* tooltip */}
       <div
         ref={tipRef}
         className={cn(
-          "fixed z-[10000] w-[360px] max-w-[calc(100vw-24px)]",
+          "fixed z-[10000] w-[370px] max-w-[calc(100vw-24px)]",
           "rounded-2xl border border-white/10 bg-slate-950/95 text-slate-50 shadow-2xl backdrop-blur"
         )}
       >
@@ -279,7 +308,7 @@ export function AppTourUI() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* ✅ Skip BEFORE Back */}
+            {/* Skip */}
             <button
               type="button"
               onClick={stop}
@@ -288,6 +317,54 @@ export function AppTourUI() {
               Skip
             </button>
 
+            {/* ✅ Jump */}
+            <div ref={jumpWrapRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setJumpOpen((v) => !v)}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-slate-200",
+                  "hover:bg-white/10"
+                )}
+              >
+                Jump
+                <ChevronDown className="h-4 w-4" />
+              </button>
+
+              {jumpOpen && (
+                <div className="absolute right-0 top-[110%] z-[10001] w-[280px] overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl">
+                  <div className="border-b border-white/10 px-3 py-2 text-[11px] text-slate-400">
+                    Jump to step
+                  </div>
+
+                  <div className="max-h-[260px] overflow-y-auto">
+                    {jumpItems.map((it) => (
+                      <button
+                        key={it.id}
+                        type="button"
+                        onClick={() => {
+                          setJumpOpen(false);
+                          goTo(it.i);
+                        }}
+                        className={cn(
+                          "w-full px-3 py-2 text-left text-xs hover:bg-white/10",
+                          it.i === index
+                            ? "bg-emerald-500/10 text-emerald-200"
+                            : "text-slate-200"
+                        )}
+                      >
+                        <div className="font-semibold">{it.title}</div>
+                        <div className="text-[11px] text-slate-400">
+                          #{it.i + 1} • {it.id}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Back */}
             <button
               type="button"
               onClick={back}

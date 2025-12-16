@@ -1,3 +1,4 @@
+// app/components/sidebar.tsx
 "use client";
 
 import {
@@ -23,6 +24,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
+import { useTourFromDb } from "@/components/tour/use-tour-from-db"; // ✅ adjust import path to your project
 import { useTranslation } from "@/lib/hooks/use-translation";
 
 type SidebarProps = {
@@ -38,12 +40,15 @@ type SidebarProps = {
     sidebarIconUrl?: string | null;
   };
 
-  // ✅ REAL props
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
 };
 
 const STORAGE_KEY = "hive-sidebar-collapsed";
+
+// ✅ convention: DB tour key that contains sidebar steps
+// (you can rename this to "sidebar" if you seed it that way)
+const SIDEBAR_TOUR_KEY = "dashboard";
 
 export function Sidebar({
   user,
@@ -55,6 +60,14 @@ export function Sidebar({
   const pathname = usePathname();
   const { resolvedTheme } = useTheme();
   const { t } = useTranslation();
+
+  // ✅ Load the current sidebar tour from DB (tenant override → global fallback)
+  const { load } = useTourFromDb(SIDEBAR_TOUR_KEY);
+
+  useEffect(() => {
+    // refresh tour config when route changes (keeps runtime synced with DB)
+    load();
+  }, [pathname, load]);
 
   const navItems = useMemo(
     () => [
@@ -104,8 +117,6 @@ export function Sidebar({
     [t]
   );
 
-  // ✅ collapsed = desktop compact mode (saved)
-  // ✅ isOpen = mobile overlay open state
   const [collapsed, setCollapsed] = useState(true);
   const [mounted, setMounted] = useState(false);
 
@@ -164,9 +175,7 @@ export function Sidebar({
   const appTitle = brand?.titleText?.trim() || "Hive";
   const { logoLightUrl, logoDarkUrl, sidebarIconUrl } = brand || {};
 
-  // ✅ avoid hydration mismatch: theme value is reliable only after mount
   const isDark = mounted ? resolvedTheme === "dark" : false;
-
   const logoForTheme = isDark
     ? logoDarkUrl || logoLightUrl || null
     : logoLightUrl || logoDarkUrl || null;
@@ -196,7 +205,6 @@ export function Sidebar({
 
   return (
     <TooltipProvider delayDuration={120}>
-      {/* ✅ Backdrop for mobile overlay */}
       {isOpen && (
         <button
           type="button"
@@ -207,31 +215,20 @@ export function Sidebar({
       )}
 
       <aside
-        data-tour="sidebar"
+        data-tour="sidebar" // ✅ stable target (DB steps should reference this)
         className={cn(
-          // base
           "z-50 flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground dark:bg-slate-950 dark:text-slate-50",
-
-          // desktop width modes
           collapsed ? "lg:w-[4.25rem]" : "lg:w-64",
-
-          // ✅ desktop: always visible
           "hidden lg:flex lg:relative",
-
-          // ✅ mobile overlay
           isOpen && "fixed inset-y-0 left-0 w-[18rem] sm:w-64 flex lg:flex",
-
-          // animation (only after mount)
           mounted && "transition-all duration-300"
         )}
       >
-        {/* Brand header */}
         <div className="flex items-center px-3 py-5">
           {collapsed ? (
             <div className="mx-auto flex w-full justify-center">
               {hasFavicon ? (
                 <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-2xl bg-background shadow-lg shadow-chart-1/30">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={sidebarIconUrl!}
                     alt={appTitle}
@@ -246,7 +243,6 @@ export function Sidebar({
             <div className="flex w-full items-center gap-3 overflow-hidden px-2">
               <div className="flex h-9 min-w-9 items-center justify-center">
                 {hasLogo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={logoForTheme!}
                     alt={appTitle}
@@ -269,7 +265,6 @@ export function Sidebar({
           )}
         </div>
 
-        {/* Nav */}
         <nav className="mt-2 flex-1 space-y-1 px-2">
           {navItems.map((item) => {
             if (!isVisible(item.href)) return null;
@@ -279,7 +274,7 @@ export function Sidebar({
 
             const link = (
               <Link
-                data-tour={item.tour} // ✅ TOUR TARGET PER LINK
+                data-tour={item.tour} // ✅ stable targets (DB steps should use: [data-tour='nav-dashboard'] etc.)
                 href={item.href}
                 className={cn(
                   "group flex items-center gap-3 rounded-xl px-2 py-2 text-xs font-medium transition-all",
@@ -288,7 +283,7 @@ export function Sidebar({
                   active &&
                     "bg-slate-900 text-slate-50 shadow-md shadow-slate-900/20 dark:bg-slate-800 dark:text-slate-50 dark:shadow-emerald-500/20"
                 )}
-                onClick={closeMobile} // ✅ close on mobile after nav
+                onClick={closeMobile}
                 aria-current={active ? "page" : undefined}
               >
                 <div
@@ -302,16 +297,18 @@ export function Sidebar({
                   <Icon className="h-4 w-4" />
                 </div>
 
-                {/* label only on desktop expanded */}
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
             );
 
-            return <div key={item.key}>{maybeWrapWithTooltip(item.label, link)}</div>;
+            return (
+              <div key={item.key}>
+                {maybeWrapWithTooltip(item.label, link)}
+              </div>
+            );
           })}
         </nav>
 
-        {/* Footer */}
         {!collapsed && (
           <div className="border-t border-sidebar-border px-4 py-3 text-[11px] text-muted-foreground dark:border-slate-800">
             <div className="truncate font-medium text-sidebar-foreground dark:text-slate-200">
@@ -325,7 +322,6 @@ export function Sidebar({
           </div>
         )}
 
-        {/* Collapsed toggle (desktop) */}
         <button
           type="button"
           onClick={toggleCollapsed}

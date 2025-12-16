@@ -22,6 +22,7 @@ import { FileSearchInput } from "@/components/file-manager/file-search-input";
 import { FolderActionsMenu } from "@/components/file-manager/folder-actions-menu";
 import Link from "next/link";
 import type React from "react";
+import { TourControls } from "@/components/tour/tour-controls"; // Import the TourControls
 import { getTenantAndUser } from "@/lib/get-tenant-and-user";
 import { prisma } from "@/lib/prisma";
 import { requireAnyPermission } from "@/lib/permission-guard";
@@ -409,12 +410,15 @@ export default async function FilesPage(props: {
       {/* Header */}
       <div className="mb-5 space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Breadcrumb />
+         <Breadcrumb />
+                  {/* Start Tour button aligned with Breadcrumb */}
+                
 
           <div className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm">
             <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-primary">
               <FolderOpen className="h-3 w-3" />
             </span>
+            
             <span className="font-medium">
               {user.email?.split("@")[0] ?? "You"}
             </span>
@@ -423,6 +427,7 @@ export default async function FilesPage(props: {
               {tenant.slug ?? "central"}
             </span>
           </div>
+            <TourControls steps={[{ id: 'start', title: 'Start Tour' }]} />
         </div>
 
         <div className="space-y-1">
