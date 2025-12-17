@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { UploadCloud } from "lucide-react";
 import { showToast } from "@/lib/toast";
 import { uploadFileAction } from "./upload-file-action";
+import { useOffline } from "@/lib/use-offline";
 
 // Register FilePond plugins
 registerPlugin(FilePondPluginImagePreview);
@@ -44,6 +45,7 @@ export function UploadFileDialog({
   const [isPending, startTransition] = useTransition();
   const [fileToUpload, setFileToUpload] = useState<File[]>([]);
   const [baseName, setBaseName] = useState("");
+  const { isOnline, storeOfflineAction } = useOffline();
 
   // Image editor state
   const [editorOpen, setEditorOpen] = useState(false);
@@ -75,6 +77,23 @@ export function UploadFileDialog({
 
     startTransition(async () => {
       try {
+        if (!isOnline) {
+          await storeOfflineAction('/api/file-manager/files', 'POST', {
+            'Content-Type': 'multipart/form-data'
+          }, JSON.stringify({ fileName: baseName || fileToUpload[0].name }));
+          
+          setFileToUpload([]);
+          setBaseName("");
+          onOpenChange(false);
+          
+          showToast({
+            title: "File Queued for Upload",
+            description: `The file will be uploaded when you're back online.`,
+            variant: "success",
+          });
+          return;
+        }
+        
         await uploadFileAction(formData);
 
         const uploadedName = baseName || fileToUpload[0].name;

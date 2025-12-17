@@ -640,7 +640,6 @@ async function main() {
   console.log(
     `${COLORS.green}  ✔ ${tenantDomains.length} tenant domains seeded${COLORS.reset}`
   );
-
   // ---------------------------------------------------------------------------
   // 7) USERS (CENTRAL + TENANT SUPERADMINS)
   // ---------------------------------------------------------------------------

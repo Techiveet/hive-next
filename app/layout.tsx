@@ -1,13 +1,19 @@
 // app/layout.tsx
 import "./globals.css";
-
 import type { Metadata } from "next";
+
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
+import { RegisterServiceWorker } from "@/components/register-sw";
+import OfflineBadge from "@/components/OfflineBadge";
+import SyncToast from "@/components/SyncToast";
 import { getBrandForRequest } from "@/lib/brand-server";
 // Import the backup scheduler
 import { startBackupScheduler } from "@/lib/backup-scheduler";
 
+/* -------------------------
+   Metadata (UNCHANGED)
+-------------------------- */
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await getBrandForRequest();
   const appTitle = brand?.titleText?.trim() || "Hive";
@@ -17,13 +23,13 @@ export async function generateMetadata(): Promise<Metadata> {
       default: appTitle,
       template: `%s | ${appTitle}`,
     },
-    // 🔥 Always use /icon – the route now reads sidebarIconUrl
     icons: {
       icon: [
         { url: "/icon", rel: "icon", type: "image/png" },
         { url: "/icon", rel: "shortcut icon", type: "image/png" },
       ],
     },
+    manifest: "/manifest.json",
   };
 }
 
@@ -44,7 +50,7 @@ export default function RootLayout({
         <ThemeProvider>
           {children}
 
-          {/* Global toast portal */}
+          {/* ✅ Global toast portal */}
           <Toaster
             richColors
             closeButton

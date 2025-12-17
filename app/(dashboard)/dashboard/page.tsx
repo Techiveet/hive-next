@@ -1,6 +1,7 @@
 // app/(dashboard)/dashboard/page.tsx
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { OfflineForm } from "@/components/offline-form";
 
 import { Breadcrumb } from "@/components/breadcrumb";
 import { TourControls } from "@/components/tour/tour-controls"; // Import the TourControls
@@ -81,16 +82,8 @@ export default function DashboardPage() {
           <CardHeader>
             <CardTitle className="text-sm font-medium">Quick actions</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <button className="w-full rounded-lg bg-emerald-500 px-3 py-2 text-xs font-medium text-emerald-950 hover:bg-emerald-400">
-              Create tenant
-            </button>
-            <button className="w-full rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-accent">
-              Invite user
-            </button>
-            <button className="w-full rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-accent">
-              View audit log
-            </button>
+          <CardContent>
+            <OfflineForm />
           </CardContent>
         </Card>
       </div>
