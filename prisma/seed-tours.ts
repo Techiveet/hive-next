@@ -162,98 +162,98 @@ async function seedTours() {
   // ---------------------------------------------------------------------------
   const globalTours: TourSeedInput[] = [
     {
-     tenantId: null,
-  tenantKey: "GLOBAL",
-  key: "dashboard",
-  name: "Dashboard Tour",
-  isActive: true,
-  version: 3, // ✅ bump again
-  steps: [
-    {
-      order: 0,
-      selector: sel("sidebar"),
-      title: "Sidebar",
-      body: "This is your main navigation panel.",
-      placement: "right",
-      padding: 10,
-      onlyPathPrefix: path("/dashboard"),
-      ...rect(R.sidebar.x, R.sidebar.y, R.sidebar.w, R.sidebar.h),
-    },
-    {
-      order: 1,
-      selector: sel("nav-dashboard"),
-      title: "Dashboard",
-      body: "Go back to the dashboard anytime.",
-      placement: "right",
-      padding: 10,
-      onlyPathPrefix: path("/dashboard"),
-      ...rect(R.dashboard.x, R.dashboard.y, R.dashboard.w, R.dashboard.h),
-    },
-    {
-      order: 2,
-      selector: sel("nav-tenants"),
-      title: "Tenants",
-      body: "Manage tenants and workspace access.",
-      placement: "right",
-      padding: 10,
-      onlyPathPrefix: path("/dashboard"),
-      ...rect(R.tenants.x, R.tenants.y, R.tenants.w, R.tenants.h),
-    },
-    {
-      order: 3,
-      selector: sel("nav-security"),
-      title: "Security",
-      body: "Roles, permissions, and security controls.",
-      placement: "right",
-      padding: 10,
-      onlyPathPrefix: path("/dashboard"),
-      ...rect(R.security.x, R.security.y, R.security.w, R.security.h),
-    },
-    {
-      order: 4,
-      selector: sel("nav-files"),
-      title: "Files",
-      body: "Upload and manage files in your workspace.",
-      placement: "right",
-      padding: 10,
-      onlyPathPrefix: path("/dashboard"),
-      ...rect(R.files.x, R.files.y, R.files.w, R.files.h),
-    },
-    {
-      order: 5,
-      selector: sel("nav-billing"),
-      title: "Billing",
-      body: "Subscription and billing information.",
-      placement: "right",
-      padding: 10,
-      onlyPathPrefix: path("/dashboard"),
-      ...rect(R.billing.x, R.billing.y, R.billing.w, R.billing.h),
-    },
+      tenantId: null,
+      tenantKey: "GLOBAL",
+      key: "dashboard",
+      name: "Dashboard Tour",
+      isActive: true,
+      version: 3, // ✅ bump again
+      steps: [
+        {
+          order: 0,
+          selector: sel("sidebar"),
+          title: "Sidebar",
+          body: "This is your main navigation panel.",
+          placement: "right",
+          padding: 10,
+          onlyPathPrefix: path("/dashboard"),
+          ...rect(R.sidebar.x, R.sidebar.y, R.sidebar.w, R.sidebar.h),
+        },
+        {
+          order: 1,
+          selector: sel("nav-dashboard"),
+          title: "Dashboard",
+          body: "Go back to the dashboard anytime.",
+          placement: "right",
+          padding: 10,
+          onlyPathPrefix: path("/dashboard"),
+          ...rect(R.dashboard.x, R.dashboard.y, R.dashboard.w, R.dashboard.h),
+        },
+        {
+          order: 2,
+          selector: sel("nav-tenants"),
+          title: "Tenants",
+          body: "Manage tenants and workspace access.",
+          placement: "right",
+          padding: 10,
+          onlyPathPrefix: path("/dashboard"),
+          ...rect(R.tenants.x, R.tenants.y, R.tenants.w, R.tenants.h),
+        },
+        {
+          order: 3,
+          selector: sel("nav-security"),
+          title: "Security",
+          body: "Roles, permissions, and security controls.",
+          placement: "right",
+          padding: 10,
+          onlyPathPrefix: path("/dashboard"),
+          ...rect(R.security.x, R.security.y, R.security.w, R.security.h),
+        },
+        {
+          order: 4,
+          selector: sel("nav-files"),
+          title: "Files",
+          body: "Upload and manage files in your workspace.",
+          placement: "right",
+          padding: 10,
+          onlyPathPrefix: path("/dashboard"),
+          ...rect(R.files.x, R.files.y, R.files.w, R.files.h),
+        },
+        {
+          order: 5,
+          selector: sel("nav-billing"),
+          title: "Billing",
+          body: "Subscription and billing information.",
+          placement: "right",
+          padding: 10,
+          onlyPathPrefix: path("/dashboard"),
+          ...rect(R.billing.x, R.billing.y, R.billing.w, R.billing.h),
+        },
 
-    // ✅ Settings is the last sidebar link → show it, but don't navigate
-    {
-      order: 6,
-      selector: sel("nav-settings"),
-      title: "Settings",
-      body: "Your app configuration lives here (profile, security, branding, etc.).",
-      placement: "right",
-      padding: 10,
-      onlyPathPrefix: path("/dashboard"),
-      ...rect(R.settings.x, R.settings.y, R.settings.w, R.settings.h),
-    },
+        // ✅ Settings is the last sidebar link → show it, but don't navigate
+        {
+          order: 6,
+          selector: sel("nav-settings"),
+          title: "Settings",
+          body: "Your app configuration lives here (profile, security, branding, etc.).",
+          placement: "right",
+          padding: 10,
+          onlyPathPrefix: path("/dashboard"),
+          ...rect(R.settings.x, R.settings.y, R.settings.w, R.settings.h),
+        },
 
-    // ✅ FINAL: content
-    {
-      order: 7,
-      selector: sel("content"), // -> [data-tour="content"]
-      title: "Main Workspace",
-      body: "This area updates based on what you open from the sidebar.",
-      placement: "bottom",
-      padding: 10,
-      onlyPathPrefix: path("/dashboard"),
-      ...rect(R.content.x, R.content.y, R.content.w, R.content.h),
-    },
-  ],
+        // ✅ FINAL: content
+        {
+          order: 7,
+          selector: sel("content"), // -> [data-tour="content"]
+          title: "Main Workspace",
+          body: "This area updates based on what you open from the sidebar.",
+          placement: "bottom",
+          padding: 10,
+          onlyPathPrefix: path("/dashboard"),
+          ...rect(R.content.x, R.content.y, R.content.w, R.content.h),
+        },
+      ],
     },
 
     {
@@ -299,6 +299,7 @@ async function seedTours() {
   // ---------------------------------------------------------------------------
   // TENANT OVERRIDES (optional)
   // ---------------------------------------------------------------------------
+// Tenant-specific tours
   const tenantTours: TourSeedInput[] = tenantId
     ? [
         {
@@ -319,10 +320,13 @@ async function seedTours() {
               onlyPathPrefix: path("/dashboard"),
               ...rect(R.sidebar.x, R.sidebar.y, R.sidebar.w, R.sidebar.h),
             },
+            // Add more steps here for tenant-specific tour
           ],
         },
       ]
     : [];
+
+ 
 
   const toursToSeed = [...globalTours, ...tenantTours];
 

@@ -1,18 +1,19 @@
 // app/layout.tsx
-import "./globals.css";
-import type { Metadata } from "next";
 
+import "./globals.css";
+
+import { ConnectionPopup } from "@/components/offline/connection-popup";
+import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "sonner";
-import { RegisterServiceWorker } from "@/components/register-sw";
-import OfflineBadge from "@/components/OfflineBadge";
-import SyncToast from "@/components/SyncToast";
 import { getBrandForRequest } from "@/lib/brand-server";
-// Import the backup scheduler
 import { startBackupScheduler } from "@/lib/backup-scheduler";
 
+// ✅ Online/Offline popup (Sonner-based)
+
+
 /* -------------------------
-   Metadata (UNCHANGED)
+   Metadata
 -------------------------- */
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await getBrandForRequest();
@@ -33,12 +34,16 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-// Initialize backup scheduler on server startup
+/* -------------------------
+   Server-only init (prod)
+-------------------------- */
 if (process.env.NODE_ENV === "production") {
-  // Start the scheduler
   startBackupScheduler();
 }
 
+/* -------------------------
+   Root Layout
+-------------------------- */
 export default function RootLayout({
   children,
 }: {
@@ -48,6 +53,9 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen bg-background text-foreground antialiased">
         <ThemeProvider>
+          {/* ✅ Beautiful online/offline popup (toast-style) */}
+          <ConnectionPopup />
+
           {children}
 
           {/* ✅ Global toast portal */}

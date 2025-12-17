@@ -1,9 +1,9 @@
 // app/(dashboard)/dashboard/page.tsx
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { OfflineForm } from "@/components/offline-form";
 
 import { Breadcrumb } from "@/components/breadcrumb";
+import { OfflineForm } from "@/components/offline/offline-form";
 import { TourControls } from "@/components/tour/tour-controls"; // Import the TourControls
 
 // Import Breadcrumb

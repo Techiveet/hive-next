@@ -74,6 +74,7 @@
     "filepond": "^4.32.10",
     "filepond-plugin-image-preview": "^4.6.12",
     "googleapis": "^167.0.0",
+    "idb": "^8.0.3",
     "ipaddr.js": "^2.3.0",
     "isomorphic-dompurify": "^2.33.0",
     "jspdf": "^3.0.4",
