@@ -19,6 +19,7 @@ import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import FilePondPluginImagePreview from "filepond-plugin-image-preview";
+import { ImageEditorDialog } from "./image-editor-dialog";
 import { Input } from "@/components/ui/input";
 import { UploadCloud } from "lucide-react";
 import { showToast } from "@/lib/toast";
@@ -32,7 +33,7 @@ type UploadFileDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   folderId?: string | null;
-  currentPath: string; // The display path for the current location
+  currentPath: string;
 };
 
 export function UploadFileDialog({
@@ -45,6 +46,11 @@ export function UploadFileDialog({
   const [fileToUpload, setFileToUpload] = useState<File[]>([]);
   const [baseName, setBaseName] = useState("");
   const { isOnline, storeOfflineAction } = useOffline();
+
+  // Image editor state
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [imageFileForEdit, setImageFileForEdit] = useState<File | null>(null);
+  const [isEdited, setIsEdited] = useState(false);
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -65,7 +71,6 @@ export function UploadFileDialog({
       formData.append("baseName", baseName);
     }
 
-    // Inject folderId if present (this folder or root)
     if (folderId) {
       formData.append("folderId", folderId);
     }
@@ -91,10 +96,12 @@ export function UploadFileDialog({
         
         await uploadFileAction(formData);
 
-        // Reset state and close dialog on success
         const uploadedName = baseName || fileToUpload[0].name;
+
         setFileToUpload([]);
         setBaseName("");
+        setImageFileForEdit(null);
+        setIsEdited(false);
         onOpenChange(false);
 
         showToast({
@@ -115,6 +122,9 @@ export function UploadFileDialog({
       }
     });
   }
+
+  const selectedIsImage =
+    fileToUpload[0] && fileToUpload[0].type.startsWith("image/");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -171,9 +181,18 @@ export function UploadFileDialog({
             <FilePond
               files={fileToUpload}
               onupdatefiles={(fileItems) => {
-                setFileToUpload(
-                  fileItems.map((fileItem) => fileItem.file as File)
+                const nextFiles = fileItems.map(
+                  (fileItem) => fileItem.file as File
                 );
+                setFileToUpload(nextFiles);
+                setIsEdited(false);
+
+                const first = nextFiles[0];
+                if (first && first.type.startsWith("image/")) {
+                  setImageFileForEdit(first);
+                } else {
+                  setImageFileForEdit(null);
+                }
               }}
               allowMultiple={false}
               maxFiles={1}
@@ -187,6 +206,26 @@ export function UploadFileDialog({
               Allowed formats: images, documents, archives, audio, video,
               source files, and more.
             </p>
+
+            {/* Edit image button */}
+            {selectedIsImage && imageFileForEdit && (
+              <div className="mt-3 flex items-center justify-between">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditorOpen(true)}
+                  disabled={isPending}
+                >
+                  Edit image (crop &amp; rotate)
+                </Button>
+                {isEdited && (
+                  <span className="text-[10px] font-medium text-emerald-600">
+                    Edited
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <DialogFooter className="flex justify-end gap-3 pt-4">
@@ -208,6 +247,20 @@ export function UploadFileDialog({
             </Button>
           </DialogFooter>
         </form>
+
+        {/* Shared image editor dialog */}
+        <ImageEditorDialog
+          open={editorOpen}
+          onOpenChange={setEditorOpen}
+          file={imageFileForEdit}
+          onSave={(editedFile) => {
+            if (!editedFile) return;
+
+            setFileToUpload([editedFile]);
+            setImageFileForEdit(editedFile);
+            setIsEdited(true);
+          }}
+        />
       </DialogContent>
     </Dialog>
   );

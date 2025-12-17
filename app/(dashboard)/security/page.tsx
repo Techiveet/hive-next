@@ -5,6 +5,7 @@ import { PermissionsTab } from "./permissions/_components/permissions-tab";
 import { RoleScope } from "@prisma/client";
 import { RolesTab } from "./roles/_components/roles-tab";
 import { SecurityTabs } from "./security-tabs";
+import { TourControls } from "@/components/tour/tour-controls"; // Import the TourControls
 import { UsersTab } from "./users/_components/users-tab";
 import { getCurrentSession } from "@/lib/auth-server";
 import { getCurrentUserPermissions } from "@/lib/rbac";
@@ -196,7 +197,11 @@ export default async function SecurityPage({
   return (
     <div className="px-4 py-4 lg:px-6 lg:py-6 xl:px-8">
       <div className="mb-5 space-y-2">
-        <Breadcrumb />
+       <div className="flex flex-wrap items-center justify-between gap-3">
+          <Breadcrumb />
+          {/* Start Tour button aligned with Breadcrumb */}
+          <TourControls steps={[{ id: 'start', title: 'Start Tour' }]} />
+        </div>
         <h1 className="text-lg font-semibold tracking-tight">
           Security &amp; Access
         </h1>

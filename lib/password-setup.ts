@@ -1,26 +1,69 @@
-// lib/password-setup.ts
-
-import crypto from "crypto";
+import { headers } from "next/headers";
+import ipaddr from "ipaddr.js";
 import { prisma } from "@/lib/prisma";
 
-const EXPIRY_HOURS = 24;
-
-export async function issuePasswordSetupToken(userId: string) {
-  const token = crypto.randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + EXPIRY_HOURS * 60 * 60 * 1000);
-
-  // one active token per user (optional but nice)
-  await prisma.passwordSetupToken.deleteMany({
-    where: { userId },
+export async function checkIpRestriction(tenantId: string | null) {
+  // 1. Get Settings
+  const settings = await prisma.ipSettings.findFirst({
+    where: { tenantId },
   });
 
-  const record = await prisma.passwordSetupToken.create({
-    data: {
-      userId,
-      token,
-      expiresAt,
-    },
-  });
+  if (!settings || !settings.enabled) {
+    return { allowed: true };
+  }
 
-  return { token: record.token, expiresAt };
+  // 2. Get User IP
+  const headersList = await headers();
+  let ipString = headersList.get("x-forwarded-for") || "127.0.0.1";
+  
+  if (ipString.includes(",")) {
+    ipString = ipString.split(",")[0].trim();
+  }
+  if (ipString === "::1") ipString = "127.0.0.1";
+
+  // 3. Parse and Verify
+  try {
+    let clientIp = ipaddr.parse(ipString);
+
+    // ✅ FIX: Convert "IPv4-mapped IPv6" (::ffff:127.0.0.1) to plain IPv4 (127.0.0.1)
+    if (clientIp.kind() === 'ipv6' && (clientIp as ipaddr.IPv6).isIPv4MappedAddress()) {
+        clientIp = (clientIp as ipaddr.IPv6).toIPv4Address();
+    }
+
+    const allowList = settings.allowList as { ip: string }[];
+
+    const isAllowed = allowList.some((entry) => {
+      try {
+        if (entry.ip.includes("/")) {
+          // CIDR Range Check
+          const range = ipaddr.parseCIDR(entry.ip);
+          return clientIp.match(range);
+        } else {
+          // Exact Match Check
+          let allowedIp = ipaddr.parse(entry.ip);
+          
+          // Normalize allowed IP too just in case
+          if (allowedIp.kind() === 'ipv6' && (allowedIp as ipaddr.IPv6).isIPv4MappedAddress()) {
+             allowedIp = (allowedIp as ipaddr.IPv6).toIPv4Address();
+          }
+
+          // Compare normalized strings
+          return clientIp.toNormalizedString() === allowedIp.toNormalizedString();
+        }
+      } catch (e) {
+        return false; 
+      }
+    });
+
+    if (isAllowed) {
+      return { allowed: true };
+    }
+
+    console.warn(`[IP Guard] Blocked access from ${clientIp.toString()} (Raw: ${ipString})`);
+    return { allowed: false, ip: clientIp.toString() };
+
+  } catch (e) {
+    console.error("[IP Guard] Error parsing IP:", e);
+    return { allowed: false, ip: "Invalid IP" };
+  }
 }

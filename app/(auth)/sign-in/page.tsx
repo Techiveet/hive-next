@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = {
-  title: "Sign In", // becomes "Sign In | <brand title>" via template
+  title: "Sign In",
 };
 
 async function getBrandSettings() {

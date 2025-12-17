@@ -1,5 +1,3 @@
-// prisma/schema.prisma
-
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
@@ -10,7 +8,7 @@ generator client {
 }
 
 // =====================
-//       USER / AUTH
+//        USER / AUTH
 // =====================
 
 model User {
@@ -19,9 +17,17 @@ model User {
   email         String
   emailVerified Boolean  @default(false)
 
+  sentEmails     Email[]           @relation("Sender")
+  receivedEmails EmailRecipient[]
+
+  // Custom Security Field
+  twoFactorEnabled       Boolean  @default(false)
+  twoFactorSecret        String?  @db.Text
+  twoFactorRecoveryCodes String?  @db.Text
+
   // make both large enough for long URLs / base64
-  image     String?  @db.LongText
-  avatarUrl String?  @db.LongText
+  image     String? @db.LongText
+  avatarUrl String? @db.LongText
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -32,17 +38,142 @@ model User {
   tenantMemberships UserTenant[]
   userRoles         UserRole[]
 
-  // file manager relations
-  folders  Folder[] @relation("UserFolders")
-  files    File[]   @relation("UserFiles")
+  // PGP
+  pgpPublicKey        String? @db.LongText
+  encryptedPrivateKey String? @db.LongText
 
-  sessions             Session[]
-  accounts             Account[]
-  passwordSetupTokens  PasswordSetupToken[] // 👈 one-time password setup tokens
+  // file manager relations
+  folders Folder[] @relation("UserFolders")
+  files   File[]   @relation("UserFiles")
+
+  // Email templates
+  emailTemplates EmailTemplate[]
+
+  sessions            Session[]
+  accounts            Account[]
+  passwordSetupTokens PasswordSetupToken[]
 
   @@unique([email])
+  @@index([email(length: 191)])
+  @@index([createdAt])
   @@map("user")
 }
+
+// =====================
+//        EMAIL
+// =====================
+
+model Email {
+  id      String @id @default(uuid())
+  subject String @db.Text
+  body    String @db.LongText
+
+  senderId String
+  sender   User   @relation("Sender", fields: [senderId], references: [id])
+
+  recipients   EmailRecipient[]
+  isStarred    Boolean @default(false)
+  senderFolder String  @default("sent")
+  isE2EE       Boolean @default(false)
+
+  attachments EmailAttachment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([senderId, senderFolder, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([isE2EE])
+}
+
+model EmailTemplate {
+  id        String  @id @default(cuid())
+  name      String
+  subject   String
+  body      String
+  // MySQL: no primitive list -> store as JSON array
+  variables Json    @default("[]")
+
+  userId   String
+  tenantId String?
+  isPublic Boolean @default(false)
+  category String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id])
+  tenant Tenant? @relation(fields: [tenantId], references: [id])
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([category])
+}
+
+enum RecipientType {
+  TO
+  CC
+  BCC
+}
+
+model EmailRecipient {
+  id String @id @default(uuid())
+
+  emailId String
+  email   Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User @relation(fields: [userId], references: [id])
+
+  isRead    Boolean       @default(false)
+  isStarred Boolean       @default(false)
+  folder    String        @default("inbox")
+  type      RecipientType @default(TO)
+
+  // spam metadata
+  previousFolder String?
+  spamReason     String? @db.Text
+  spamScore      Float?
+  spamFlags      Json?
+
+  createdAt DateTime @default(now())
+
+  @@unique([emailId, userId])
+
+  @@index([userId, folder, isRead, createdAt(sort: Desc)])
+  @@index([userId, folder, isStarred, createdAt(sort: Desc)])
+  @@index([userId, folder, createdAt(sort: Desc)])
+  @@index([userId, isRead])
+  @@index([emailId])
+  @@index([createdAt(sort: Desc)])
+  @@index([userId, folder, spamScore])
+}
+
+enum AttachmentType {
+  IMAGE
+  VIDEO
+  FILE
+}
+
+model EmailAttachment {
+  id String @id @default(cuid())
+
+  emailId String
+  email   Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  fileId String
+  file   File @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  type AttachmentType @default(FILE)
+
+  createdAt DateTime @default(now())
+
+  @@index([emailId])
+}
+
+// =====================
+//        SESSION / AUTH
+// =====================
 
 model Session {
   id        String   @id
@@ -52,32 +183,37 @@ model Session {
   updatedAt DateTime @updatedAt
   ipAddress String?  @db.Text
   userAgent String?  @db.Text
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([token])
-  @@index([userId(length: 191)])
+  @@index([userId(length: 191)], map: "session_user_idx_v4")
+  @@index([expiresAt])
   @@map("session")
 }
 
 model Account {
-  id                    String   @id
-  accountId             String
-  providerId            String
-  userId                String
-  user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accessToken           String?  @db.Text
-  refreshToken          String?  @db.Text
-  idToken               String?  @db.Text
+  id         String @id
+  accountId  String
+  providerId String
+
+  userId String
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
   accessTokenExpiresAt  DateTime?
   refreshTokenExpiresAt DateTime?
-  scope                 String?  @db.Text
-  password              String?  @db.Text
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  scope                 String?   @db.Text
+  password              String?   @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([providerId, accountId])
-  @@index([userId])
+  @@index([userId], map: "account_user_idx_v4")
   @@map("account")
 }
 
@@ -89,11 +225,11 @@ model Verification {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@index([identifier(length: 191)])
+  @@index([identifier(length: 191)], map: "verification_identifier_idx_v4")
+  @@index([expiresAt])
   @@map("verification")
 }
 
-// one-time password setup / activation links
 model PasswordSetupToken {
   id        String   @id @default(cuid())
   token     String   @unique
@@ -102,17 +238,18 @@ model PasswordSetupToken {
   expiresAt DateTime
   createdAt DateTime @default(now())
 
-  @@index([userId(length: 191)])
+  @@index([userId(length: 191)], map: "password_setup_token_user_idx_v4")
+  @@index([expiresAt])
   @@map("password_setup_token")
 }
 
 // =====================
-//   MULTI-TENANT + RBAC
+//    MULTI-TENANT + RBAC
 // =====================
 
 enum RoleScope {
-  CENTRAL // central platform roles (tenantId = null)
-  TENANT  // tenant-scoped roles  (tenantId = specific tenant)
+  CENTRAL
+  TENANT
 }
 
 enum EmailProvider {
@@ -127,7 +264,7 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  isActive Boolean @default(true) // ✅ activation / deactivation
+  isActive Boolean @default(true)
 
   users       UserTenant[]
   userRoles   UserRole[]
@@ -137,11 +274,28 @@ model Tenant {
   roles       Role[]
   permissions Permission[]
 
+  emailTemplates EmailTemplate[]
+
   // one settings row per tenant
-  appSettings       AppSettings?
-  brandSettings     BrandSettings?
-  companySettings   CompanySettings?
-  emailSettings     EmailSettings?
+  appSettings         AppSettings?
+  brandSettings       BrandSettings?
+  companySettings     CompanySettings?
+  emailSettings       EmailSettings?
+  fileManagerSettings FileManagerSettings?
+
+  storageSettings StorageSettings?
+
+  backupSettings BackupSettings?
+  backups        BackupHistory[]
+  languages      Language[]
+
+  ipSettings IpSettings?
+
+  // ✅ Tours (central/global tours use tenantId = null)
+  tours Tour[]
+
+  @@index([slug])
+  @@index([createdAt])
 }
 
 model TenantDomain {
@@ -152,15 +306,17 @@ model TenantDomain {
   updatedAt DateTime @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([domain])
+  @@index([tenantId])
 }
 
 model Role {
-  id    Int       @id @default(autoincrement())
+  id    Int      @id @default(autoincrement())
   key   String
   name  String
   scope RoleScope
 
-  // global (null) or tenant-local
   tenantId String?
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -170,8 +326,8 @@ model Role {
   userRoles   UserRole[]
   permissions RolePermission[]
 
-  // key is unique PER tenant; global roles have tenantId = null
   @@unique([tenantId, key])
+  @@index([tenantId])
 }
 
 model Permission {
@@ -179,7 +335,6 @@ model Permission {
   key  String
   name String
 
-  // global (null) or tenant-local
   tenantId String?
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -189,6 +344,7 @@ model Permission {
   roles RolePermission[]
 
   @@unique([tenantId, key])
+  @@index([tenantId])
 }
 
 model RolePermission {
@@ -199,6 +355,8 @@ model RolePermission {
   permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   @@id([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
 }
 
 model UserTenant {
@@ -211,23 +369,28 @@ model UserTenant {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([userId, tenantId])
+  @@index([userId])
+  @@index([tenantId])
 }
 
 model UserRole {
-  id       String  @id @default(cuid())
+  id       String @id @default(cuid())
   userId   String
   roleId   Int
-  tenantId String? // null = central role
+  tenantId String?
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   role   Role    @relation(fields: [roleId], references: [id], onDelete: Cascade)
   tenant Tenant? @relation(fields: [tenantId], references: [id])
 
   @@unique([userId, roleId, tenantId])
+  @@index([userId])
+  @@index([roleId])
+  @@index([tenantId])
 }
 
 // =====================
-//   FILE MANAGER
+//      FILE MANAGER
 // =====================
 
 model Folder {
@@ -242,13 +405,17 @@ model Folder {
   children Folder[] @relation("FolderChildren")
 
   createdById String
-  createdBy   User   @relation("UserFolders", fields: [createdById], references: [id])
+  createdBy   User @relation("UserFolders", fields: [createdById], references: [id])
 
-  files     File[]
+  files File[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([tenantId])
+  @@index([parentId])
+  @@index([createdById])
+  @@index([createdAt])
 }
 
 model File {
@@ -256,8 +423,7 @@ model File {
   name     String
   size     Int
   mimeType String
-
-  url String @db.LongText
+  url      String @db.LongText
 
   tenantId String
   tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -266,52 +432,64 @@ model File {
   folder   Folder? @relation(fields: [folderId], references: [id])
 
   ownerId String
-  owner   User   @relation("UserFiles", fields: [ownerId], references: [id])
+  owner   User @relation("UserFiles", fields: [ownerId], references: [id])
 
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  isFavorite Boolean  @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  isFavorite Boolean   @default(false)
   deletedAt  DateTime?
+
+  emailAttachments EmailAttachment[]
+
+  @@index([tenantId])
+  @@index([folderId])
+  @@index([ownerId])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@index([isFavorite])
+}
+
+// =====================
+//      FILE SETTINGS
+// =====================
+
+model FileManagerSettings {
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  maxFileSizeMb             Int     @default(50)
+  allowedExtensions         Json    @default("[]")
+  autoEmptyRecycleBinDays   Int     @default(30)
+  requireDeleteConfirmation Boolean @default(true)
+  allowPublicSharing        Boolean @default(false)
 
   @@index([tenantId])
 }
 
 // =====================
-//   FILE SETTINGS
-// =====================
-
-model FileManagerSettings {
-  id                        String  @id @default("global")
-  maxFileSizeMb             Int     @default(50)
-  allowedExtensions         Json
-  autoEmptyRecycleBinDays   Int     @default(30)
-  requireDeleteConfirmation Boolean @default(true)
-  allowPublicSharing        Boolean @default(false)
-}
-
-// =====================
-//   APP SETTINGS
+//       APP SETTINGS
 // =====================
 
 model AppSettings {
   id       String  @id @default(cuid())
-  tenantId String?
+  tenantId String? @unique
   tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   timezone               String  @default("UTC")
   locale                 String  @default("en")
   dateFormat             String  @default("yyyy-MM-dd")
   timeFormat             String  @default("HH:mm")
-  weekStartsOn           Int     @default(1)        // 1 = Monday
-  defaultTheme           String  @default("system") // "light" | "dark" | "system"
+  weekStartsOn           Int     @default(1)
+  defaultTheme           String  @default("system")
   allowUserThemeOverride Boolean @default(true)
   enforceTwoFactor       Boolean @default(false)
+  sessionTimeout         Int     @default(30)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // one row per tenant (plus optional central row with tenantId = null)
-  @@unique([tenantId])
+  @@index([tenantId])
 }
 
 model BrandSettings {
@@ -326,11 +504,12 @@ model BrandSettings {
   logoDarkUrl  String? @db.LongText
   faviconUrl   String? @db.LongText
 
-  // NEW FIELD
   sidebarIconUrl String? @db.LongText
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model CompanySettings {
@@ -354,6 +533,8 @@ model CompanySettings {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
 }
 
 model EmailSettings {
@@ -370,8 +551,209 @@ model EmailSettings {
   smtpHost     String?
   smtpPort     Int?
   smtpUser     String?
-  smtpSecurity String? // "tls" | "ssl" | "none"
+  smtpSecurity String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+// =====================
+//      LOCALIZATION
+// =====================
+
+model Language {
+  id       String  @id @default(cuid())
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  code      String
+  name      String
+  isDefault Boolean @default(false)
+  isEnabled Boolean @default(true)
+
+  translations Json @default("{}")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([isDefault])
+  @@index([isEnabled])
+}
+
+// =====================
+//     BACKUP SYSTEM
+// =====================
+
+model BackupSettings {
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  enabled   Boolean @default(false)
+  frequency String  @default("DAILY")
+  time      String  @default("00:00")
+  retention Int     @default(7)
+
+  notificationEmail String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model BackupHistory {
+  id       String  @id @default(cuid())
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  filename String
+  path     String @db.Text
+  size     BigInt
+  status   String
+  type     String
+
+  createdAt DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([createdAt])
+  @@index([status])
+}
+
+// =====================
+//    CRON JOB REGISTRY
+// =====================
+
+model SystemCron {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  name        String
+  description String?
+
+  schedule String
+  url      String
+
+  lastRunAt   DateTime?
+  lastStatus  String?
+  lastMessage String?  @db.Text
+
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([enabled])
+  @@index([lastRunAt])
+}
+
+// =====================
+//     STORAGE SETTINGS
+// =====================
+
+model StorageSettings {
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  provider String @default("LOCAL")
+
+  accessKeyId     String? @db.Text
+  secretAccessKey String? @db.Text
+  endpoint        String? @db.Text
+  region          String? @db.Text
+  bucket          String? @db.Text
+
+  gdriveJson String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+// =====================
+//      IP RESTRICTION
+// =====================
+
+model IpSettings {
+  id       String  @id @default(cuid())
+  tenantId String? @unique
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  enabled  Boolean @default(false)
+  strategy String  @default("ALLOW")
+
+  allowList Json @default("[]")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([enabled])
+}
+
+// =====================
+//       APP TOURS
+// =====================
+
+model Tour {
+  id       String  @id @default(cuid())
+
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  // ✅ required (avoid NULL unique issues)
+  tenantKey String
+
+  key      String
+  name     String
+  isActive Boolean @default(true)
+  version  Int     @default(1)
+
+  steps TourStep[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantKey, key])
+  @@index([tenantKey])
+  @@index([key])
+  @@index([isActive])
+}
+
+
+model TourStep {
+  id     String @id @default(cuid())
+
+  tourId String
+  tour   Tour   @relation(fields: [tourId], references: [id], onDelete: Cascade)
+
+  // order within the tour (0..n)
+  order Int @default(0)
+
+  selector  String
+  title     String
+  body      String
+  placement String @default("right") // "top" | "right" | "bottom" | "left"
+  padding   Int?
+
+  // optional fixed rect overrides (px)
+  rectX      Int?
+  rectY      Int?
+  rectWidth  Int?
+  rectHeight Int?
+
+  // optional: only show this step on matching routes
+  onlyPathPrefix String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // ensure no duplicate order per tour
+  @@unique([tourId, order])
+  @@index([tourId])
+  @@index([onlyPathPrefix])
 }

@@ -3,6 +3,7 @@
 import { Breadcrumb } from "@/components/breadcrumb";
 import { RoleScope } from "@prisma/client";
 import { TenantsClient } from "./_components/tenants-client";
+import { TourControls } from "@/components/tour/tour-controls"; // Import the TourControls
 import { getCurrentSession } from "@/lib/auth-server";
 import { getCurrentUserPermissions } from "@/lib/rbac";
 import { headers } from "next/headers";
@@ -131,9 +132,11 @@ export default async function TenantsPage() {
   return (
     <div className="px-4 py-4 lg:px-6 lg:py-6 xl:px-8">
       <div className="mb-5 space-y-2">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Breadcrumb />
-        </div>
+         <div className="flex flex-wrap items-center justify-between gap-3">
+                  <Breadcrumb />
+                  {/* Start Tour button aligned with Breadcrumb */}
+                  <TourControls steps={[{ id: 'start', title: 'Start Tour' }]} />
+                </div>
         <div className="space-y-1">
           <h1 className="text-lg font-semibold tracking-tight">Tenants</h1>
           <p className="text-xs text-muted-foreground">

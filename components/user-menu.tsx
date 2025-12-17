@@ -1,6 +1,6 @@
 "use client";
 
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { LogOut, User2 } from "lucide-react";
+import { LogOut, Mail, User2 } from "lucide-react"; // Import Mail icon
 
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
@@ -19,6 +19,7 @@ type UserMenuProps = {
   user: {
     name: string | null;
     email: string;
+    image?: string | null; // 🔥 MUST be here
   };
 };
 
@@ -27,8 +28,12 @@ export function UserMenu({ user }: UserMenuProps) {
   const [loading, setLoading] = useState(false);
 
   const initials =
-    user.name?.split(" ").map(p => p[0]).join("").slice(0, 2).toUpperCase() ??
-    user.email[0].toUpperCase();
+    user.name
+      ?.split(" ")
+      .map((p) => p[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() ?? user.email[0].toUpperCase();
 
   const handleSignOut = async () => {
     setLoading(true);
@@ -45,10 +50,28 @@ export function UserMenu({ user }: UserMenuProps) {
     }
   };
 
+  const handleGoProfile = () => {
+    router.push("/profile?tab=general");
+  };
+
+   // --- NEW HANDLER ---
+  const handleGoEmail = () => {
+    router.push("/email?folder=inbox"); // Assuming /email is the entry point
+  };
+
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/80 px-2 py-1 text-left text-xs hover:bg-slate-800 focus:outline-none">
         <Avatar className="h-7 w-7 border border-slate-600">
+          {/* 🔥 show profile image if set */}
+          {user.image ? (
+            <AvatarImage
+              src={user.image}
+              alt={user.name ?? user.email}
+              className="object-cover"
+            />
+          ) : null}
           <AvatarFallback className="bg-gradient-to-tr from-emerald-400 to-sky-500 text-xs font-semibold text-slate-950">
             {initials}
           </AvatarFallback>
@@ -68,6 +91,13 @@ export function UserMenu({ user }: UserMenuProps) {
       >
         <DropdownMenuLabel className="flex items-center gap-2">
           <Avatar className="h-8 w-8 border border-slate-600">
+            {user.image ? (
+              <AvatarImage
+                src={user.image}
+                alt={user.name ?? user.email}
+                className="object-cover"
+              />
+            ) : null}
             <AvatarFallback className="bg-gradient-to-tr from-emerald-400 to-sky-500 text-xs font-semibold text-slate-950">
               {initials}
             </AvatarFallback>
@@ -82,13 +112,26 @@ export function UserMenu({ user }: UserMenuProps) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="bg-slate-800" />
-        <DropdownMenuItem className="text-xs">
+
+         
+
+ <DropdownMenuItem
+          className="text-xs cursor-pointer"
+          onClick={handleGoEmail}
+        >
+          <Mail className="mr-2 h-3.5 w-3.5" />
+           Email Inbox
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-xs cursor-pointer"
+          onClick={handleGoProfile}
+        >
           <User2 className="mr-2 h-3.5 w-3.5" />
           Profile
         </DropdownMenuItem>
         <DropdownMenuSeparator className="bg-slate-800" />
         <DropdownMenuItem
-          className="text-xs text-red-300 focus:bg-red-950/60 focus:text-red-200"
+          className="text-xs text-red-300 focus:bg-red-950/60 focus:text-red-200 cursor-pointer"
           onClick={handleSignOut}
           disabled={loading}
         >

@@ -8,6 +8,8 @@ import { RegisterServiceWorker } from "@/components/register-sw";
 import OfflineBadge from "@/components/OfflineBadge";
 import SyncToast from "@/components/SyncToast";
 import { getBrandForRequest } from "@/lib/brand-server";
+// Import the backup scheduler
+import { startBackupScheduler } from "@/lib/backup-scheduler";
 
 /* -------------------------
    Metadata (UNCHANGED)
@@ -31,9 +33,12 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-/* -------------------------
-   Root Layout
--------------------------- */
+// Initialize backup scheduler on server startup
+if (process.env.NODE_ENV === "production") {
+  // Start the scheduler
+  startBackupScheduler();
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -42,15 +47,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen bg-background text-foreground antialiased">
-        {/* ✅ Service Worker registration */}
-        <RegisterServiceWorker />
-
-        {/* ✅ Offline / Online indicator */}
-        <OfflineBadge />
-
-        {/* ✅ Sync status toast */}
-        <SyncToast />
-
         <ThemeProvider>
           {children}
 

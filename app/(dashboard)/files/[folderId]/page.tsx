@@ -3,7 +3,6 @@
 import {
   ChevronRight,
   Clock,
-  Download,
   FileText,
   FolderOpen,
   Image as ImageIcon,
@@ -19,10 +18,10 @@ import { Breadcrumb } from "@/components/breadcrumb";
 import { CreateFileButton } from "@/components/file-manager/create-file-button";
 import { CreateFolderButton } from "@/components/file-manager/create-folder-button";
 import { FileActionsMenu } from "@/components/file-manager/file-actions-menu";
+import { FileDetailsPanel } from "@/components/file-manager/file-details-panel";
 import { FileSearchInput } from "@/components/file-manager/file-search-input";
 import { FolderActionsMenu } from "@/components/file-manager/folder-actions-menu";
 import Link from "next/link";
-import { PdfModalViewer } from "@/components/file-manager/pdf-fullscreen-viewer";
 import type React from "react";
 import { getTenantAndUser } from "@/lib/get-tenant-and-user";
 import { prisma } from "@/lib/prisma";
@@ -395,11 +394,6 @@ export default async function FolderPage(props: {
                 </p>
               </div>
             </div>
-
-            {/* Logout placeholder */}
-            {/* <button className="inline-flex w-full items-center justify-start gap-2 rounded-xl border bg-background px-3 py-2 text-[11px] font-medium text-muted-foreground shadow-sm transition hover:bg-destructive/5 hover:text-destructive">
-              Logout
-            </button> */}
           </div>
         </section>
 
@@ -584,38 +578,18 @@ export default async function FolderPage(props: {
               />
             </header>
 
-            <div className="flex flex-1 flex-col gap-4 px-5 py-6 text-[11px]">
-              <div className="flex items-center justify-center rounded-2xl bg-muted/60 p-3">
-                <FilePreview
-                  mimeType={selectedFile!.mimeType}
-                  url={selectedFile!.url}
-                  name={selectedFile!.name}
-                />
-              </div>
-
-              <div className="flex justify-end">
-                <a
-                  href={selectedFile!.url}
-                  download={selectedFile!.name}
-                  className="inline-flex items-center gap-1 rounded-full border bg-background px-3 py-1 text-[11px] font-medium shadow-sm hover:bg-muted"
-                >
-                  <Download className="h-3 w-3" />
-                  Download
-                </a>
-              </div>
-
-              <DetailRow label="File Name" value={selectedFile!.name} />
-              <DetailRow label="Size" value={formatBytes(selectedFile!.size)} />
-              <DetailRow
-                label="MIME Type"
-                value={selectedFile!.mimeType || "Unknown"}
-              />
-              <DetailRow label="Location" value={currentPath} />
-              <DetailRow
-                label="Created At"
-                value={selectedFile!.createdAt.toISOString()}
-              />
-            </div>
+            <FileDetailsPanel
+              file={{
+                id: selectedFile!.id,
+                name: selectedFile!.name,
+                url: selectedFile!.url,
+                size: selectedFile!.size,
+                mimeType: selectedFile!.mimeType,
+                createdAt: selectedFile!.createdAt,
+                folderId: selectedFile!.folderId,
+              }}
+              locationLabel={currentPath}
+            />
           </section>
         ) : null}
       </div>
@@ -656,82 +630,5 @@ function SidebarItem({
         {children}
       </span>
     </Comp>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="space-y-0.5 rounded-lg bg-muted/40 px-3 py-2">
-      <p className="text-[10px] font-semibold text-muted-foreground">{label}</p>
-      <p className="text-[11px] break-words">{value}</p>
-    </div>
-  );
-}
-
-function FilePreview({
-  mimeType,
-  url,
-  name,
-}: {
-  mimeType: string;
-  url: string;
-  name: string;
-}) {
-  const type = getPreviewType(mimeType);
-
-  if (type === "image") {
-    return (
-      <img
-        src={url}
-        alt={name}
-        className="max-h-48 max-w-full rounded-lg object-contain"
-      />
-    );
-  }
-
-  if (type === "video") {
-    return (
-      <video
-        src={url}
-        controls
-        className="max-h-48 max-w-full rounded-lg bg-black"
-      />
-    );
-  }
-
-  if (type === "audio") {
-    return (
-      <audio src={url} controls className="w-full">
-        Your browser does not support the audio element.
-      </audio>
-    );
-  }
-
-  // PDF → modal viewer with full-screen button inside
-  if (type === "pdf") {
-    return (
-      <div className="flex flex-col items-center gap-2 text-[11px]">
-        <p className="text-muted-foreground">
-          This is a PDF file. Click below to view it.
-        </p>
-        <PdfModalViewer url={url} />
-      </div>
-    );
-  }
-
-  if (type === "text") {
-    return (
-      <iframe
-        src={url}
-        title={name}
-        className="h-48 w-full rounded-lg border bg-background"
-      />
-    );
-  }
-
-  return (
-    <div className="text-center text-[11px] text-muted-foreground">
-      No inline preview available. Use the download button to open this file.
-    </div>
   );
 }
