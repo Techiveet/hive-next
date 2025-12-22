@@ -1,7 +1,7 @@
-// lib/offline/offline-queue.ts
 "use client";
 
 import { getOfflineDB, type PendingItem } from "@/lib/offline/offline-db";
+import { emitQueueChanged } from "@/lib/offline/offline-events";
 
 function isFormData(body: any): body is FormData {
   return typeof FormData !== "undefined" && body instanceof FormData;
@@ -21,30 +21,13 @@ async function fileToBase64(file: File): Promise<string> {
 
 async function formDataToBase64Payload(fd: FormData, maxBytes = 3_000_000) {
   const fields: Record<string, string> = {};
-  const files: Array<{
-    field: string;
-    name: string;
-    type: string;
-    base64: string;
-    size: number;
-  }> = [];
+  const files: Array<{ field: string; name: string; type: string; base64: string; size: number }> = [];
 
   for (const [key, value] of fd.entries()) {
     if (value instanceof File) {
-      if (value.size > maxBytes) {
-        throw new Error(
-          `File too large for offline queue (${value.size} bytes). Limit: ${maxBytes}.`
-        );
-      }
-
+      if (value.size > maxBytes) throw new Error(`File too large (${value.size}). Limit: ${maxBytes}.`);
       const base64 = await fileToBase64(value);
-      files.push({
-        field: key,
-        name: value.name,
-        type: value.type || "application/octet-stream",
-        base64,
-        size: value.size,
-      });
+      files.push({ field: key, name: value.name, type: value.type || "application/octet-stream", base64, size: value.size });
     } else {
       fields[key] = String(value);
     }
@@ -88,16 +71,19 @@ export async function queueRequest(input: {
 
   const db = await getOfflineDB();
   await db.add("pending", item);
+  emitQueueChanged();
 }
 
 export async function listPending() {
   const db = await getOfflineDB();
-  return db.getAllFromIndex("pending", "by-createdAt");
+  const all = await db.getAllFromIndex("pending", "by-createdAt");
+  return all.sort((a, b) => a.createdAt - b.createdAt); // replay oldest first
 }
 
 export async function removePending(id: number) {
   const db = await getOfflineDB();
   await db.delete("pending", id);
+  emitQueueChanged();
 }
 
 export async function pendingCount() {

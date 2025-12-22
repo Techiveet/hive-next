@@ -757,3 +757,12 @@ model TourStep {
   @@index([tourId])
   @@index([onlyPathPrefix])
 }
+
+
+model OfflineTestItem {
+  id        String   @id @default(cuid())
+  title     String
+  body      String?
+  createdBy String?  // optional if you want to attach user
+  createdAt DateTime @default(now())
+}

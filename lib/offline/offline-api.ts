@@ -1,43 +1,46 @@
-// lib/offline/offline-api.ts
 "use client";
+
+import { browserOnlineFlag, hasServer } from "@/lib/offline/connectivity";
+import { emitQueueChanged, emitStatusChanged } from "@/lib/offline/offline-events";
 
 import { queueRequest } from "@/lib/offline/offline-queue";
 
-async function triggerSync() {
-  if (!("serviceWorker" in navigator)) return;
+function notifyQueued() {
+  emitQueueChanged();
+  emitStatusChanged();
 
-  const reg = await navigator.serviceWorker.ready;
-
-  if ("sync" in reg) {
-    try {
-      await reg.sync.register("sync-pending");
-      return;
-    } catch {
-      // fallback
-    }
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.ready
+      .then((reg) => reg.active?.postMessage({ type: "sync-pending" }))
+      .catch(() => {});
   }
-
-  reg.active?.postMessage({ type: "sync-pending" });
 }
 
-function isWrite(method: string) {
-  return ["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase());
+async function shouldQueueWrite(): Promise<boolean> {
+  if (!browserOnlineFlag()) return true;
+  const srvOk = await hasServer(1200);
+  return !srvOk;
 }
 
 export async function offlineFetch(url: string, options: RequestInit = {}) {
   const method = (options.method || "GET").toUpperCase();
-  const write = isWrite(method);
+  const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
 
-  // Offline => queue writes immediately
-  if (write && typeof navigator !== "undefined" && !navigator.onLine) {
+  if (!isWrite) {
+    return fetch(url, { ...options, credentials: "include", cache: "no-store" });
+  }
+
+  const queue = await shouldQueueWrite();
+
+  if (queue) {
     await queueRequest({
       url,
       method,
-      headers: (options.headers as any) || {},
+      headers: ((options.headers as any) || {}) as Record<string, string>,
       body: options.body,
     });
 
-    await triggerSync();
+    notifyQueued();
 
     return new Response(JSON.stringify({ queued: true }), {
       status: 202,
@@ -45,7 +48,6 @@ export async function offlineFetch(url: string, options: RequestInit = {}) {
     });
   }
 
-  // Try network
   try {
     const res = await fetch(url, {
       ...options,
@@ -54,34 +56,17 @@ export async function offlineFetch(url: string, options: RequestInit = {}) {
       cache: "no-store",
     });
 
-    // Server error on writes => queue for later
-    if (write && !res.ok) {
+    if (res.ok) return res;
+
+    if (res.status >= 500) {
       await queueRequest({
         url,
         method,
-        headers: (options.headers as any) || {},
+        headers: ((options.headers as any) || {}) as Record<string, string>,
         body: options.body,
       });
 
-      await triggerSync();
-
-      return new Response(JSON.stringify({ queued: true, status: res.status }), {
-        status: 202,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    return res;
-  } catch {
-    if (write) {
-      await queueRequest({
-        url,
-        method,
-        headers: (options.headers as any) || {},
-        body: options.body,
-      });
-
-      await triggerSync();
+      notifyQueued();
 
       return new Response(JSON.stringify({ queued: true }), {
         status: 202,
@@ -89,8 +74,19 @@ export async function offlineFetch(url: string, options: RequestInit = {}) {
       });
     }
 
-    return new Response(JSON.stringify({ error: "offline" }), {
-      status: 503,
+    return res;
+  } catch {
+    await queueRequest({
+      url,
+      method,
+      headers: ((options.headers as any) || {}) as Record<string, string>,
+      body: options.body,
+    });
+
+    notifyQueued();
+
+    return new Response(JSON.stringify({ queued: true }), {
+      status: 202,
       headers: { "Content-Type": "application/json" },
     });
   }

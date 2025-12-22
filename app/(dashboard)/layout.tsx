@@ -4,6 +4,7 @@ import { AppConfigProvider } from "@/components/providers/app-config-provider";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { FileManagerEventListener } from "@/components/file-manager/file-manager-event-listener";
 import { I18nProvider } from "@/lib/i18n/client";
+import { OfflineUI } from "@/components/offline/offline-ui";
 import { PermissionsProvider } from "@/components/providers/permissions-provider";
 import type { ReactNode } from "react";
 import { SessionGuard } from "@/components/session-guard";
@@ -161,7 +162,7 @@ const tenantKey = tenant?.slug ?? "GLOBAL"; // ✅ CORRECT
           <SessionGuard timeoutMinutes={config.sessionTimeout} />
           <TwoFactorEnforcer enforced={config.enforceTwoFactor} isEnabled={user.twoFactorEnabled ?? false} />
           <FileManagerEventListener />
-
+  <OfflineUI />
           <DashboardShell
             tenantKey={tenantKey}
             user={{ id: user.id, name: user.name ?? null, email: user.email, image: user.image ?? null }}

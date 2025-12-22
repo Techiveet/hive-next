@@ -1,4 +1,3 @@
-// lib/offline/offline-db.ts
 "use client";
 
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
@@ -25,28 +24,33 @@ interface HiveOfflineDB extends DBSchema {
       "by-url": string;
     };
   };
-
-  // later you can add more stores here (drafts, cachedEntities, etc)
 }
+
+const DB_NAME = "hive-db";
+const DB_VERSION = 2;
 
 let dbPromise: Promise<IDBPDatabase<HiveOfflineDB>> | null = null;
 
-export function getOfflineDB() {
-  if (!dbPromise) {
-    dbPromise = openDB<HiveOfflineDB>("hive-db", 1, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains("pending")) {
-          const store = db.createObjectStore("pending", {
-            keyPath: "id",
-            autoIncrement: true,
-          });
+function initDB() {
+  return openDB<HiveOfflineDB>(DB_NAME, DB_VERSION, {
+    upgrade(db, oldVersion) {
+      if (oldVersion < 1) {
+        const store = db.createObjectStore("pending", {
+          keyPath: "id",
+          autoIncrement: true,
+        });
+        store.createIndex("by-createdAt", "createdAt");
+        store.createIndex("by-url", "url");
+      }
 
-          store.createIndex("by-createdAt", "createdAt");
-          store.createIndex("by-url", "url");
-        }
-      },
-    });
-  }
+      if (oldVersion < 2) {
+        // future migrations
+      }
+    },
+  });
+}
 
+export async function getOfflineDB() {
+  if (!dbPromise) dbPromise = initDB();
   return dbPromise;
 }

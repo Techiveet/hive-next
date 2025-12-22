@@ -1,27 +1,40 @@
-// lib/offline/connectivity.ts
-export async function hasInternet(timeoutMs = 3500): Promise<boolean> {
-  if (typeof navigator !== "undefined" && !navigator.onLine) return false;
+"use client";
 
+export function browserOnlineFlag(): boolean {
+  if (typeof navigator === "undefined") return true;
+  return navigator.onLine !== false;
+}
+
+async function fallbackPing(timeoutMs: number): Promise<boolean> {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    // external connectivity probe
-    await fetch("https://www.gstatic.com/generate_204", {
+    const res = await fetch(`/api/offline-test?ts=${Date.now()}`, {
       method: "GET",
-      mode: "no-cors",
       cache: "no-store",
+      credentials: "include",
       signal: controller.signal,
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+        Pragma: "no-cache",
+      },
     });
-    return true;
-  } catch {
-    return false;
-  } finally {
+
     clearTimeout(t);
+    return res.ok;
+  } catch {
+    clearTimeout(t);
+    return false;
   }
 }
 
-export async function hasServer(timeoutMs = 3500): Promise<boolean> {
+export async function hasServer(timeoutMs = 1200): Promise<boolean> {
+  if (typeof window === "undefined") return true;
+
+  // If browser says offline, treat as offline (fast)
+  if (!browserOnlineFlag()) return false;
+
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -29,18 +42,26 @@ export async function hasServer(timeoutMs = 3500): Promise<boolean> {
     const res = await fetch(`/api/health?ts=${Date.now()}`, {
       method: "GET",
       cache: "no-store",
-      signal: controller.signal,
       credentials: "include",
+      signal: controller.signal,
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
         Pragma: "no-cache",
       },
     });
 
-    return res.ok;
-  } catch {
-    return false;
-  } finally {
     clearTimeout(t);
+
+    if (res.ok) return true;
+    if (res.status === 404) return await fallbackPing(timeoutMs);
+
+    return false;
+  } catch {
+    clearTimeout(t);
+    return await fallbackPing(timeoutMs);
   }
+}
+
+export async function hasInternet(): Promise<boolean> {
+  return browserOnlineFlag();
 }

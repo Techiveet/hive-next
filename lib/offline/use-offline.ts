@@ -1,144 +1,210 @@
-// lib/offline/use-offline.ts
 "use client";
 
-import { hasInternet, hasServer } from "@/lib/offline/connectivity";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { browserOnlineFlag, hasServer } from "@/lib/offline/connectivity";
 import { listPending, pendingCount, removePending } from "@/lib/offline/offline-queue";
-import { useEffect, useRef, useState } from "react";
-
-import type { PendingItem } from "@/lib/offline/offline-db";
+import { getOfflineDB, type PendingItem } from "@/lib/offline/offline-db";
+import { onQueueChanged, onStatusChanged } from "@/lib/offline/offline-events";
 
 function base64ToUint8Array(base64: string) {
   const binary = atob(base64 || "");
-  const len = binary.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
 }
 
-function buildRequest(item: PendingItem) {
-  const method = item.method || "POST";
-  const headers = item.headers || {};
+function buildRequest(item: PendingItem): RequestInit {
+  const method = (item.method || "POST").toUpperCase();
+  const headers = { ...(item.headers || {}) };
 
   if (item.bodyType === "json") {
-    return {
-      method,
-      headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify(item.body ?? {}),
-    };
+    return { method, headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(item.body ?? {}) };
   }
 
   if (item.bodyType === "text") {
-    return {
-      method,
-      headers: { "Content-Type": "text/plain", ...headers },
-      body: String(item.body ?? ""),
-    };
+    return { method, headers: { "Content-Type": "text/plain", ...headers }, body: String(item.body ?? "") };
   }
 
-  // formdata-base64
   const fd = new FormData();
-  const { fields, files } = (item.body || {}) as {
-    fields: Record<string, string>;
-    files: Array<{ field: string; name: string; type: string; base64: string }>;
+  const payload = (item.body || {}) as {
+    fields?: Record<string, string>;
+    files?: Array<{ field: string; name: string; type: string; base64: string }>;
   };
 
-  Object.entries(fields || {}).forEach(([k, v]) => fd.append(k, String(v)));
+  Object.entries(payload.fields || {}).forEach(([k, v]) => fd.append(k, String(v)));
 
-  for (const f of files || []) {
+  for (const f of payload.files || []) {
     const bytes = base64ToUint8Array(f.base64);
     fd.append(f.field || "file", new Blob([bytes], { type: f.type }), f.name);
   }
 
-  // don't set content-type for formdata
-  return { method, headers: { ...headers }, body: fd };
+  return { method, headers, body: fd };
 }
 
 export function useOffline() {
-  const [netOk, setNetOk] = useState(true);
-  const [srvOk, setSrvOk] = useState(true);
-  const [pending, setPending] = useState(0);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [netOk, setNetOk] = useState<boolean>(true);
+  const [srvOk, setSrvOk] = useState<boolean>(true);
+  const [pending, setPending] = useState<number>(0);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
-  const lockRef = useRef(false);
+  const mountedRef = useRef(false);
+  const syncLock = useRef(false);
 
-  const isOnline = netOk && srvOk;
+  const isOnline = useMemo(() => netOk && srvOk, [netOk, srvOk]);
 
-  async function refreshPending() {
-    setPending(await pendingCount());
-  }
+  const refreshPending = useCallback(async () => {
+    const c = await pendingCount();
+    if (mountedRef.current) setPending(c);
+    return c;
+  }, []);
 
-  async function refreshStatus() {
-    if (lockRef.current) return;
-    lockRef.current = true;
+  const refreshStatus = useCallback(async () => {
+    const browserOk = browserOnlineFlag();
+    if (mountedRef.current) setNetOk(browserOk);
 
-    try {
-      const [a, b] = await Promise.all([hasInternet(), hasServer()]);
-      setNetOk(a);
-      setSrvOk(b);
-    } finally {
-      lockRef.current = false;
-    }
-  }
+    const srv = await hasServer(1200);
+    if (mountedRef.current) setSrvOk(srv);
 
-  async function syncOfflineData() {
-    await refreshStatus();
-    if (!isOnline || isSyncing) return;
+    // ✅ if server is unreachable, we are effectively offline even if browser says "online"
+    if (!srv && mountedRef.current) setNetOk(false);
 
-    setIsSyncing(true);
+    return { net: browserOk && srv, srv };
+  }, []);
 
-    try {
-      const items = await listPending();
+  const setOfflineInstant = useCallback(() => {
+    if (!mountedRef.current) return;
+    setNetOk(false);
+    setSrvOk(false);
+  }, []);
 
-      for (const item of items) {
-        try {
-          const req = buildRequest(item as PendingItem);
-          const res = await fetch(item.url, {
-            ...req,
-            credentials: "include",
-            cache: "no-store",
-          });
+  const syncOfflineData = useCallback(
+    async (force = false) => {
+      if (syncLock.current && !force) return { synced: 0, failed: 0, skipped: true };
+      syncLock.current = true;
 
-          if (res.ok) {
-            await removePending(item.id!);
-          }
-        } catch {
-          // keep it for retry
+      if (!mountedRef.current) return { synced: 0, failed: 0, skipped: true };
+
+      setIsSyncing(true);
+
+      try {
+        const { net, srv } = await refreshStatus();
+        if (!(net && srv)) return { synced: 0, failed: 0 };
+
+        const items = await listPending();
+        if (items.length === 0) {
+          await refreshPending();
+          return { synced: 0, failed: 0 };
         }
+
+        let synced = 0;
+        let failed = 0;
+
+        const db = await getOfflineDB();
+
+        for (const raw of items) {
+          const item = raw as PendingItem;
+
+          try {
+            const req = buildRequest(item);
+            const controller = new AbortController();
+            const t = setTimeout(() => controller.abort(), 10000);
+
+            const res = await fetch(item.url, {
+              ...req,
+              credentials: "include",
+              cache: "no-store",
+              signal: controller.signal,
+            });
+
+            clearTimeout(t);
+
+            if (res.ok) {
+              await removePending(item.id!);
+              synced++;
+              continue;
+            }
+
+            failed++;
+
+            // 5xx => keep for retry
+            if (res.status >= 500) {
+              await db.put("pending", { ...item, retryCount: (item.retryCount || 0) + 1 });
+              continue;
+            }
+
+            // 4xx => drop (won’t succeed later)
+            await removePending(item.id!);
+          } catch {
+            failed++;
+            setOfflineInstant();
+            await db.put("pending", { ...item, retryCount: (item.retryCount || 0) + 1 });
+            break;
+          }
+        }
+
+        await refreshPending();
+        return { synced, failed };
+      } finally {
+        if (mountedRef.current) setIsSyncing(false);
+        syncLock.current = false;
       }
-    } finally {
-      await refreshPending();
-      setIsSyncing(false);
-    }
-  }
+    },
+    [refreshPending, refreshStatus, setOfflineInstant]
+  );
 
   useEffect(() => {
-    refreshStatus();
-    refreshPending();
+    mountedRef.current = true;
 
-    const onOnline = async () => {
+    (async () => {
+      await refreshPending();
       await refreshStatus();
-      if (isOnline) await syncOfflineData();
+    })();
+
+    const onOffline = () => setOfflineInstant();
+    const onOnline = async () => {
+      const { net, srv } = await refreshStatus();
+      if (net && srv) void syncOfflineData(false);
     };
 
-    const onOffline = () => {
-      setNetOk(false);
-      setSrvOk(false);
-    };
-
-    window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
+    window.addEventListener("online", onOnline);
 
-    const interval = setInterval(() => {
-      refreshStatus();
-    }, 4000);
+    // ✅ Listen to SW messages net-offline / net-online
+    const onSW = (event: MessageEvent) => {
+      const type = event.data?.type;
+      if (type === "net-offline") setOfflineInstant();
+      if (type === "net-online") void onOnline();
+      if (type === "trigger-sync") void syncOfflineData(true);
+    };
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", onSW);
+    }
+
+    // ✅ Event bus
+    const offQueue = onQueueChanged(() => void refreshPending());
+    const offStatus = onStatusChanged(() => void refreshStatus());
+
+    // ✅ Active SW ping: detects wifi off even if no requests happen
+    const ping = setInterval(() => {
+      if (!("serviceWorker" in navigator)) return;
+      navigator.serviceWorker.ready
+        .then((reg) => reg.active?.postMessage({ type: "check-connection" }))
+        .catch(() => {});
+    }, 3000);
 
     return () => {
-      clearInterval(interval);
-      window.removeEventListener("online", onOnline);
+      mountedRef.current = false;
       window.removeEventListener("offline", onOffline);
+      window.removeEventListener("online", onOnline);
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("message", onSW);
+      }
+      offQueue();
+      offStatus();
+      clearInterval(ping);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refreshPending, refreshStatus, setOfflineInstant, syncOfflineData]);
 
   return {
     isOnline,
@@ -147,5 +213,6 @@ export function useOffline() {
     pending,
     isSyncing,
     syncOfflineData,
+    refreshStatus,
   };
 }

@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { UploadCloud } from "lucide-react";
 import { showToast } from "@/lib/toast";
 import { uploadFileAction } from "./upload-file-action";
-import { useOffline } from "@/lib/use-offline";
+import { useOffline } from "@/lib/offline/use-offline";
 
 // Register FilePond plugins
 registerPlugin(FilePondPluginImagePreview);

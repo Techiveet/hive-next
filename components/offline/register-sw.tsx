@@ -1,4 +1,4 @@
-// app/register-sw.tsx
+//components/offline/register-sw.tsx
 "use client";
 
 import { useEffect } from "react";

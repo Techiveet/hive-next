@@ -8,7 +8,14 @@
     "start": "next start",
     "lint": "eslint",
     "i18n:sync": "tsx scripts/seed-translations.ts",
-    "tour:seed": "tsx prisma/seed-tours.ts"
+    "tour:seed": "tsx prisma/seed-tours.ts",
+     "test:offline": "node scripts/test-offline-simple.js",
+    "test:offline:debug": "node scripts/test-offline.js",
+    "test:manual": "echo 'Open http://localhost:3000/dashboard/offline-test and test with DevTools Network throttling'",
+    "test:playwright": "npx playwright test",
+    "test:playwright:ui": "npx playwright test --ui",
+    "test:playwright:offline": "npx playwright test offline.spec.ts",
+    "test:playwright:debug": "PWDEBUG=1 npx playwright test offline.spec.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.943.0",
@@ -108,6 +115,7 @@
   "devDependencies": {
     "@better-auth/cli": "^1.4.1",
     "@faker-js/faker": "^10.1.0",
+    "@playwright/test": "^1.57.0",
     "@tailwindcss/postcss": "^4",
     "@types/archiver": "^7.0.0",
     "@types/bcryptjs": "^2.4.6",
@@ -123,6 +131,7 @@
     "eslint-config-next": "16.0.3",
     "madge": "^8.0.0",
     "prisma": "^6.19.0",
+    "puppeteer": "^24.33.1",
     "sass": "^1.94.2",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",

@@ -1,3 +1,4 @@
+//components/offline/register-service-worker.tsx
 "use client";
 
 import { useEffect } from "react";
