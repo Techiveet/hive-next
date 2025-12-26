@@ -27,30 +27,50 @@ interface HiveOfflineDB extends DBSchema {
 }
 
 const DB_NAME = "hive-db";
-const DB_VERSION = 2;
+const DB_VERSION = 5;
 
 let dbPromise: Promise<IDBPDatabase<HiveOfflineDB>> | null = null;
+
+// Clear existing database completely
+async function clearDatabase() {
+  try {
+    const deleteReq = indexedDB.deleteDatabase(DB_NAME);
+    await new Promise((resolve, reject) => {
+      deleteReq.onsuccess = () => resolve(undefined);
+      deleteReq.onerror = () => reject(deleteReq.error);
+    });
+  } catch (error) {
+    console.warn("Failed to clear database:", error);
+  }
+}
 
 function initDB() {
   return openDB<HiveOfflineDB>(DB_NAME, DB_VERSION, {
     upgrade(db, oldVersion) {
-      if (oldVersion < 1) {
-        const store = db.createObjectStore("pending", {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-        store.createIndex("by-createdAt", "createdAt");
-        store.createIndex("by-url", "url");
+      // Always recreate the store
+      if (db.objectStoreNames.contains("pending")) {
+        db.deleteObjectStore("pending");
       }
-
-      if (oldVersion < 2) {
-        // future migrations
-      }
+      
+      const store = db.createObjectStore("pending", {
+        keyPath: "id",
+        autoIncrement: true,
+      });
+      store.createIndex("by-createdAt", "createdAt");
+      store.createIndex("by-url", "url");
+    },
+    blocked() {
+      // Force reload if blocked
+      setTimeout(() => location.reload(), 100);
     },
   });
 }
 
 export async function getOfflineDB() {
-  if (!dbPromise) dbPromise = initDB();
+  if (!dbPromise) {
+    // Clear database first time
+    await clearDatabase();
+    dbPromise = initDB();
+  }
   return dbPromise;
 }
