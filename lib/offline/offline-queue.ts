@@ -75,9 +75,15 @@ export async function queueRequest(input: {
 }
 
 export async function listPending() {
-  const db = await getOfflineDB();
-  const all = await db.getAllFromIndex("pending", "by-createdAt");
-  return all.sort((a, b) => a.createdAt - b.createdAt); // replay oldest first
+  try {
+    const db = await getOfflineDB();
+    // Use getAll instead of index to avoid index issues
+    const all = await db.getAll("pending");
+    return all.sort((a, b) => a.createdAt - b.createdAt);
+  } catch (error) {
+    console.warn("Failed to list pending items:", error);
+    return [];
+  }
 }
 
 export async function removePending(id: number) {
